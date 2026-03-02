@@ -135,14 +135,16 @@ class AsyncCollector:
         ssl_context.set_ciphers("DEFAULT@SECLEVEL=1")
 
         # Discover candidate WebSocket URLs (returns list)
-        candidate_urls, self._real_room_id = get_danmu_server(self.room_id, manual_url=self.ws_url_override)
-        
+        candidate_urls, self._real_room_id = get_danmu_server(
+            self.room_id, manual_url=self.ws_url_override
+        )
+
         # Try each candidate URL until one works
         last_error = None
         for url in candidate_urls:
             try:
                 logger.info(f"Trying server: {url}")
-                
+
                 # Connect with Origin header (required for CDN nodes)
                 async with websockets.connect(
                     url,
@@ -152,24 +154,24 @@ class AsyncCollector:
                     self._websocket = websocket
                     self._running = True
                     logger.info(f"Connected to {url}")
-                    
+
                     # Send login request
                     await self._send_login()
-                    
+
                     # Send joingroup request
                     await self._send_joingroup()
-                    
+
                     # Start heartbeat task
                     self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
                     logger.debug("Heartbeat task started")
-                    
+
                     # Process incoming messages
                     await self._process_messages()
-                    
+
                     # If we reach here, connection was successful and then closed normally
                     logger.info(f"Connection to {url} closed normally")
                     return
-                    
+
             except asyncio.CancelledError:
                 logger.info("Async collector cancelled")
                 raise
@@ -186,7 +188,7 @@ class AsyncCollector:
                 self._running = False
                 self._websocket = None
                 continue
-        
+
         # If we tried all URLs and all failed
         raise RuntimeError(
             f"Failed to connect to any danmu server after trying {len(candidate_urls)} URLs. "
@@ -238,7 +240,9 @@ class AsyncCollector:
         if not self._websocket:
             raise RuntimeError("WebSocket not connected")
 
-        joingroup_msg = serialize_message({"type": "joingroup", "rid": self._real_room_id, "gid": -9999})
+        joingroup_msg = serialize_message(
+            {"type": "joingroup", "rid": self._real_room_id, "gid": -9999}
+        )
         await self._websocket.send(encode_message(joingroup_msg))
         logger.debug(f"Sent joingroup: {joingroup_msg}")
 
@@ -265,6 +269,41 @@ class AsyncCollector:
         except asyncio.CancelledError:
             logger.debug("Heartbeat loop cancelled")
             # Normal shutdown, don't re-raise
+
+    def _build_danmu_message(self, msg_dict: dict, msg_type: MessageType) -> DanmuMessage:
+        """Build a DanmuMessage from a parsed protocol dict.
+
+        Extracts common fields and constructs extra dict with all remaining fields.
+        Handles field name variations across message types (uid/unk, nn/donk, rid/drid).
+
+        Args:
+            msg_dict: Parsed protocol message dictionary
+            msg_type: MessageType enum value for this message
+
+        Returns:
+            DanmuMessage instance with msg_type and extra populated
+        """
+        uid = msg_dict.get("uid") or msg_dict.get("unk")  # anbc/rnewbc uses unk
+        nn = msg_dict.get("nn") or msg_dict.get("donk")  # anbc/rnewbc uses donk
+        rid = msg_dict.get("rid") or msg_dict.get("drid")  # anbc/rnewbc uses drid
+        room_id = int(rid) if rid and str(rid).isdigit() else self.room_id
+        level = msg_dict.get("level", "0")
+
+        # Build extra: everything except common fields already captured as typed columns
+        common_keys = {"type", "uid", "unk", "nn", "donk", "rid", "drid", "level"}
+        extra = {k: v for k, v in msg_dict.items() if k not in common_keys}
+
+        return DanmuMessage(
+            timestamp=datetime.now(),
+            username=nn,
+            content=None,  # Non-chatmsg types have no text content
+            user_level=int(level) if str(level).isdigit() else 0,
+            user_id=uid,
+            room_id=room_id,
+            msg_type=msg_type,
+            raw_data=msg_dict,
+            extra=extra if extra else None,  # None if empty dict
+        )
 
     async def _process_messages(self) -> None:
         """Main message receive loop.
@@ -324,6 +363,60 @@ class AsyncCollector:
                             self.storage.save(danmu_message)
                         except Exception as e:
                             logger.error(f"Failed to save danmu message: {e}")
+                    elif msg_type == "dgb":  # Gift
+                        danmu_message = self._build_danmu_message(msg_dict, MessageType.DGB)
+                        gfcnt = msg_dict.get("gfcnt", "1")
+                        gfid = msg_dict.get("gfid", "unknown")
+                        print(f"[{danmu_message.username}] 送出了 {gfcnt}x 礼物{gfid}")
+                        try:
+                            self.storage.save(danmu_message)
+                        except Exception as e:
+                            logger.error(f"Failed to save dgb message: {e}")
+
+                    elif msg_type == "uenter":  # User enter
+                        danmu_message = self._build_danmu_message(msg_dict, MessageType.UENTER)
+                        print(f"[{danmu_message.username}] 进入了直播间")
+                        try:
+                            self.storage.save(danmu_message)
+                        except Exception as e:
+                            logger.error(f"Failed to save uenter message: {e}")
+
+                    elif msg_type == "anbc":  # Open noble
+                        danmu_message = self._build_danmu_message(msg_dict, MessageType.ANBC)
+                        nl = msg_dict.get("nl", "?")
+                        print(f"[{danmu_message.username}] 开通了{nl}级贵族")
+                        try:
+                            self.storage.save(danmu_message)
+                        except Exception as e:
+                            logger.error(f"Failed to save anbc message: {e}")
+
+                    elif msg_type == "rnewbc":  # Renew noble
+                        danmu_message = self._build_danmu_message(msg_dict, MessageType.RNEWBC)
+                        nl = msg_dict.get("nl", "?")
+                        print(f"[{danmu_message.username}] 续费了{nl}级贵族")
+                        try:
+                            self.storage.save(danmu_message)
+                        except Exception as e:
+                            logger.error(f"Failed to save rnewbc message: {e}")
+
+                    elif msg_type == "blab":  # Fan badge level up
+                        danmu_message = self._build_danmu_message(msg_dict, MessageType.BLAB)
+                        bl = msg_dict.get("bl", "?")
+                        bnn = msg_dict.get("bnn", "粉丝牌")
+                        print(f"[{danmu_message.username}] 粉丝牌《{bnn}》升级至{bl}级")
+                        try:
+                            self.storage.save(danmu_message)
+                        except Exception as e:
+                            logger.error(f"Failed to save blab message: {e}")
+
+                    elif msg_type == "upgrade":  # User level up
+                        danmu_message = self._build_danmu_message(msg_dict, MessageType.UPGRADE)
+                        print(f"[{danmu_message.username}] 升级到{danmu_message.user_level}级")
+                        try:
+                            self.storage.save(danmu_message)
+                        except Exception as e:
+                            logger.error(f"Failed to save upgrade message: {e}")
+
                     else:
                         # Log other message types in debug mode
                         logger.debug(f"Received message type: {msg_type}")

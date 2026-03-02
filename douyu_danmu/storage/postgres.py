@@ -11,6 +11,7 @@ from typing import Any
 
 import psycopg2
 from psycopg2 import sql
+from psycopg2.extras import Json
 
 from ..types import DanmuMessage
 from .base import StorageHandler
@@ -103,7 +104,7 @@ class PostgreSQLStorage(StorageHandler):
 
             # Create table if not exists
             self._create_table()
-        except psycopg2.Error as e:
+        except psycopg2.Error:
             if self.connection is not None:
                 self.connection.close()
             raise
@@ -140,6 +141,20 @@ class PostgreSQLStorage(StorageHandler):
             ).format(sql.Identifier(self.table_name))
 
             cursor.execute(create_table_query)
+            self.connection.commit()
+
+            # Add msg_type column
+            cursor.execute(
+                sql.SQL("ALTER TABLE {} ADD COLUMN IF NOT EXISTS msg_type TEXT").format(
+                    sql.Identifier(self.table_name)
+                )
+            )
+            # Add extra column
+            cursor.execute(
+                sql.SQL("ALTER TABLE {} ADD COLUMN IF NOT EXISTS extra JSONB").format(
+                    sql.Identifier(self.table_name)
+                )
+            )
             self.connection.commit()
             cursor.close()
         except psycopg2.Error:
@@ -180,8 +195,8 @@ class PostgreSQLStorage(StorageHandler):
             # Build INSERT query with parameterized table name
             insert_query = sql.SQL(
                 """
-                INSERT INTO {} (timestamp, username, content, user_level, user_id, room_id)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO {} (timestamp, username, content, user_level, user_id, room_id, msg_type, extra)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """
             ).format(sql.Identifier(self.table_name))
 
@@ -195,6 +210,8 @@ class PostgreSQLStorage(StorageHandler):
                     msg_dict["user_level"],
                     msg_dict["user_id"],
                     msg_dict["room_id"],
+                    msg_dict["msg_type"],
+                    Json(msg_dict["extra"]) if msg_dict["extra"] is not None else None,
                 ),
             )
             self.connection.commit()

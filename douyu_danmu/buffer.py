@@ -166,7 +166,5 @@ class MessageBuffer:
         try:
             return deserialize_message(message_str)
         except Exception as e:
-            logger.warning(
-                f"Failed to deserialize message: {e}. Message: {message_str[:100]}"
-            )
+            logger.warning(f"Failed to deserialize message: {e}. Message: {message_str[:100]}")
             return None

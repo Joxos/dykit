@@ -23,7 +23,6 @@ Key-Value Serialization:
 
 from __future__ import annotations
 
-import json
 import re
 import struct
 
@@ -177,9 +176,7 @@ def resolve_room_id(room_id: int | str, timeout: float = 10.0) -> int:
         return room_id
 
     room_id_str = str(room_id).strip()
-    headers = {
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"}
 
     # Method 1: Try betard API (primary method)
     try:
@@ -228,7 +225,9 @@ def resolve_room_id(room_id: int | str, timeout: float = 10.0) -> int:
     return int(room_id_str)
 
 
-def get_danmu_server(room_id: int | str, timeout: float = 10.0, manual_url: str | None = None) -> tuple[list[str], int]:
+def get_danmu_server(
+    room_id: int | str, timeout: float = 10.0, manual_url: str | None = None
+) -> tuple[list[str], int]:
     """Get danmu WebSocket server URLs for a given room.
 
     Attempts to extract the real danmu server configuration from the room page.
@@ -247,12 +246,12 @@ def get_danmu_server(room_id: int | str, timeout: float = 10.0, manual_url: str 
     """
     # Resolve the real room ID first
     real_room_id = resolve_room_id(room_id, timeout=timeout)
-    
+
     # If manual_url is provided, use it directly
     if manual_url:
         logger.info(f"Using manual WebSocket URL: {manual_url}")
         return [manual_url], real_room_id
-    
+
     # Common danmu proxy ports (8505 and 8506 are most common)
     default_ports = [8506, 8505, 8502, 8504, 8501, 8508]
     discovered_port = None
@@ -260,50 +259,52 @@ def get_danmu_server(room_id: int | str, timeout: float = 10.0, manual_url: str 
     try:
         # Fetch room page HTML
         url = f"https://www.douyu.com/{room_id}"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
-        }
-        
+        headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"}
+
         logger.info(f"Fetching danmu server config for room {room_id}...")
         response = httpx.get(url, headers=headers, timeout=timeout, follow_redirects=True)
         response.raise_for_status()
 
         # Parse HTML to find danmu server config
         soup = BeautifulSoup(response.text, "html.parser")
-        
+
         # Method 1: Look for danmuproxy URL patterns in <script> tags
         scripts = soup.find_all("script")
         for script in scripts:
             if not script.string:
                 continue
-            
+
             # Try to extract port from patterns like danmuproxy.douyu.com:8502
-            port_match = re.search(r'danmuproxy\.douyu\.com:(\d+)', script.string)
+            port_match = re.search(r"danmuproxy\.douyu\.com:(\d+)", script.string)
             if port_match:
                 discovered_port = int(port_match.group(1))
                 logger.info(f"Discovered danmu port from HTML: {discovered_port}")
                 break
-            
+
             # Try JSON parsing for embedded config objects
             if "$ROOM" in script.string or "room" in script.string.lower():
                 # Look for port-like numbers near danmu/websocket keywords
-                port_pattern = re.search(r'["\'](?:danmu_?port|ws_?port)["\']\s*[:=]\s*(\d+)', script.string, re.IGNORECASE)
+                port_pattern = re.search(
+                    r'["\'](?:danmu_?port|ws_?port)["\']\s*[:=]\s*(\d+)',
+                    script.string,
+                    re.IGNORECASE,
+                )
                 if port_pattern:
                     discovered_port = int(port_pattern.group(1))
                     logger.info(f"Discovered danmu port from config: {discovered_port}")
                     break
-        
+
         if not discovered_port:
             logger.warning(f"Could not find danmu server config for room {room_id}")
-        
+
     except httpx.HTTPError as e:
         logger.warning(f"HTTP error fetching room {room_id}: {e}")
     except Exception as e:
         logger.warning(f"Error discovering danmu server for room {room_id}: {e}")
-    
+
     # Build candidate URL list
     candidate_urls = []
-    
+
     # If we discovered a specific port, try it first
     if discovered_port and discovered_port not in default_ports:
         candidate_urls.append(f"wss://danmuproxy.douyu.com:{discovered_port}/")
@@ -311,10 +312,10 @@ def get_danmu_server(room_id: int | str, timeout: float = 10.0, manual_url: str 
         # Discovered port is in default list, prioritize it
         default_ports.remove(discovered_port)
         default_ports.insert(0, discovered_port)
-    
+
     # Add all default ports
     for port in default_ports:
         candidate_urls.append(f"wss://danmuproxy.douyu.com:{port}/")
-    
+
     logger.info(f"Candidate servers: {candidate_urls[:3]}... ({len(candidate_urls)} total)")
     return candidate_urls, real_room_id

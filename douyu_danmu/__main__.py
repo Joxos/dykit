@@ -113,8 +113,7 @@ async def _async_main(args: argparse.Namespace) -> None:
         with storage:
             collector = AsyncCollector(args.room_id, storage, ws_url=args.ws_url)
             logger.info(
-                f"Starting async collection from room {args.room_id} "
-                f"(storage: {args.storage})"
+                f"Starting async collection from room {args.room_id} (storage: {args.storage})"
             )
             try:
                 await collector.connect()
@@ -137,8 +136,7 @@ def _sync_main(args: argparse.Namespace) -> None:
         with storage:
             collector = SyncCollector(args.room_id, storage, ws_url=args.ws_url)
             logger.info(
-                f"Starting sync collection from room {args.room_id} "
-                f"(storage: {args.storage})"
+                f"Starting sync collection from room {args.room_id} (storage: {args.storage})"
             )
             try:
                 collector.connect()
@@ -166,11 +164,11 @@ Examples:
     )
 
     parser.add_argument(
-        'room_id',
+        "room_id",
         type=int,
-        nargs='?',
+        nargs="?",
         default=6657,
-        help='Douyu room ID (default: %(default)s)',
+        help="Douyu room ID (default: %(default)s)",
     )
 
     parser.add_argument(
@@ -237,7 +235,6 @@ Examples:
         action="store_true",
         help="Use async collector instead of sync",
     )
-
 
     parser.add_argument(
         "-v",

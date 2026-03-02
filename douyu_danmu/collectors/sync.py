@@ -93,6 +93,41 @@ class SyncCollector:
         self.running = False
         self._buffer = MessageBuffer()
 
+    def _build_danmu_message(self, msg_dict: dict, msg_type: MessageType) -> DanmuMessage:
+        """Build a DanmuMessage from a parsed protocol dict.
+
+        Extracts common fields and constructs extra dict with all remaining fields.
+        Handles field name variations across message types (uid/unk, nn/donk, rid/drid).
+
+        Args:
+            msg_dict: Parsed protocol message dictionary
+            msg_type: MessageType enum value for this message
+
+        Returns:
+            DanmuMessage instance with msg_type and extra populated
+        """
+        uid = msg_dict.get("uid") or msg_dict.get("unk")  # anbc/rnewbc uses unk
+        nn = msg_dict.get("nn") or msg_dict.get("donk")  # anbc/rnewbc uses donk
+        rid = msg_dict.get("rid") or msg_dict.get("drid")  # anbc/rnewbc uses drid
+        room_id = int(rid) if rid and str(rid).isdigit() else self.room_id
+        level = msg_dict.get("level", "0")
+
+        # Build extra: everything except common fields already captured as typed columns
+        common_keys = {"type", "uid", "unk", "nn", "donk", "rid", "drid", "level"}
+        extra = {k: v for k, v in msg_dict.items() if k not in common_keys}
+
+        return DanmuMessage(
+            timestamp=datetime.now(),
+            username=nn,
+            content=None,  # Non-chatmsg types have no text content
+            user_level=int(level) if str(level).isdigit() else 0,
+            user_id=uid,
+            room_id=room_id,
+            msg_type=msg_type,
+            raw_data=msg_dict,
+            extra=extra if extra else None,  # None if empty dict
+        )
+
     def _on_message(self, ws: WebSocketApp, message: bytes) -> None:
         """Handle incoming WebSocket messages.
 
@@ -137,6 +172,54 @@ class SyncCollector:
                     self.storage.save(danmu_message)
                 except Exception as e:
                     logger.error(f"Failed to save danmu message: {e}")
+            elif msg_type == "dgb":  # Gift
+                danmu_message = self._build_danmu_message(msg_dict, MessageType.DGB)
+                gfcnt = msg_dict.get("gfcnt", "1")
+                gfid = msg_dict.get("gfid", "unknown")
+                print(f"[{danmu_message.username}] 送出了 {gfcnt}x 礼物{gfid}")
+                try:
+                    self.storage.save(danmu_message)
+                except Exception as e:
+                    logger.error(f"Failed to save dgb message: {e}")
+            elif msg_type == "uenter":  # User enter
+                danmu_message = self._build_danmu_message(msg_dict, MessageType.UENTER)
+                print(f"[{danmu_message.username}] 进入了直播间")
+                try:
+                    self.storage.save(danmu_message)
+                except Exception as e:
+                    logger.error(f"Failed to save uenter message: {e}")
+            elif msg_type == "anbc":  # Open noble
+                danmu_message = self._build_danmu_message(msg_dict, MessageType.ANBC)
+                nl = msg_dict.get("nl", "?")
+                print(f"[{danmu_message.username}] 开通了{nl}级贵族")
+                try:
+                    self.storage.save(danmu_message)
+                except Exception as e:
+                    logger.error(f"Failed to save anbc message: {e}")
+            elif msg_type == "rnewbc":  # Renew noble
+                danmu_message = self._build_danmu_message(msg_dict, MessageType.RNEWBC)
+                nl = msg_dict.get("nl", "?")
+                print(f"[{danmu_message.username}] 续费了{nl}级贵族")
+                try:
+                    self.storage.save(danmu_message)
+                except Exception as e:
+                    logger.error(f"Failed to save rnewbc message: {e}")
+            elif msg_type == "blab":  # Fan badge level up
+                danmu_message = self._build_danmu_message(msg_dict, MessageType.BLAB)
+                bl = msg_dict.get("bl", "?")
+                bnn = msg_dict.get("bnn", "粉丝牌")
+                print(f"[{danmu_message.username}] 粉丝牌《{bnn}》升级至{bl}级")
+                try:
+                    self.storage.save(danmu_message)
+                except Exception as e:
+                    logger.error(f"Failed to save blab message: {e}")
+            elif msg_type == "upgrade":  # User level up
+                danmu_message = self._build_danmu_message(msg_dict, MessageType.UPGRADE)
+                print(f"[{danmu_message.username}] 升级到{danmu_message.user_level}级")
+                try:
+                    self.storage.save(danmu_message)
+                except Exception as e:
+                    logger.error(f"Failed to save upgrade message: {e}")
             else:
                 # Log other message types in debug mode
                 logger.debug(f"Received message type: {msg_type}")
@@ -173,14 +256,16 @@ class SyncCollector:
             ws: WebSocket application instance.
         """
         logger.info(f"Connected to {self.ws_url}")
- 
+
         # Send login request
         login_msg = serialize_message({"type": "loginreq", "roomid": self._real_room_id})
         ws.send(encode_message(login_msg), opcode=0x2)  # 0x2 = binary
         logger.debug(f"Sent loginreq: {login_msg}")
 
         # Send joingroup request
-        joingroup_msg = serialize_message({"type": "joingroup", "rid": self._real_room_id, "gid": -9999})
+        joingroup_msg = serialize_message(
+            {"type": "joingroup", "rid": self._real_room_id, "gid": -9999}
+        )
         ws.send(encode_message(joingroup_msg), opcode=0x2)
         logger.debug(f"Sent joingroup: {joingroup_msg}")
 
@@ -221,16 +306,17 @@ class SyncCollector:
             Exception: Any exception from WebSocket connection or SSL handshake.
         """
         # Discover candidate WebSocket URLs (returns list)
-        candidate_urls, self._real_room_id = get_danmu_server(self.room_id, manual_url=self.ws_url_override)
+        candidate_urls, self._real_room_id = get_danmu_server(
+            self.room_id, manual_url=self.ws_url_override
+        )
 
-        
         # Try each candidate URL until one works
         last_error = None
         for url in candidate_urls:
             try:
                 logger.info(f"Trying server: {url}")
                 self.ws_url = url
-                
+
                 self.ws = WebSocketApp(
                     self.ws_url,
                     on_message=self._on_message,
@@ -249,19 +335,19 @@ class SyncCollector:
                     "ssl_version": ssl.PROTOCOL_TLS_CLIENT,
                     "ciphers": "DEFAULT@SECLEVEL=1",
                 }
-                
+
                 # This blocks until connection closes
                 self.ws.run_forever(sslopt=sslopt)
-                
+
                 # If we reach here, connection was successful and then closed normally
                 logger.info(f"Connection to {url} closed normally")
                 return
-                
+
             except Exception as e:
                 last_error = e
                 logger.warning(f"Failed to connect to {url}: {e}")
                 continue
-        
+
         # If we tried all URLs and all failed
         raise RuntimeError(
             f"Failed to connect to any danmu server after trying {len(candidate_urls)} URLs. "
