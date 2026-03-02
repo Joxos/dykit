@@ -42,23 +42,23 @@
 完全重构 douyu_danmu 包，无任何历史包袱
 
 ### Must Have
-- [ ] CLI 改为位置参数，无参数默认 6657
-- [ ] 输出文件名格式: `{timestamp}_{room_id}.csv` 或 PostgreSQL 表
-- [ ] 新增 PostgreSQL 存储后端
-- [ ] 目录结构重组: sync/ 和 async/ 分离
-- [ ] 使用 loguru 替代 logging
-YN|- [ ] 删除所有 backward compatibility 代码
-PZ|- [ ] 清理无用文件 (douyu_danmu.py, 旧CSV等)
-YW|- [ ] 添加 .gitignore 忽略规则
+- [x] CLI 改为位置参数，无参数默认 6657
+- [x] 输出文件名格式: `{timestamp}_{room_id}.csv` 或 PostgreSQL 表
+- [x] 新增 PostgreSQL 存储后端
+- [x] 目录结构重组: sync/ 和 async/ 分离
+- [x] 使用 loguru 替代 logging
+- [x] 删除所有 backward compatibility 代码
+- [x] 清理无用文件 (douyu_danmu.py, 旧CSV等)
+- [x] 添加 .gitignore 忽略规则
 
 ### Must NOT Have
-- [ ] 任何 --room-id 参数
-- [ ] 任何 backward compatibility
-- [ ] 任何 warnings
-HH|- [ ] 任何技术债 (废弃代码)
-MB|- [ ] 内置 logging 模块
-HQ|- [ ] 删除 douyu_danmu.py (旧单文件)
-BX|- [ ] 删除旧 CSV 测试文件
+- [x] 任何 --room-id 参数
+- [x] 任何 backward compatibility
+- [x] 任何 warnings
+- [x] 任何技术债 (废弃代码)
+- [x] 内置 logging 模块
+- [x] 删除 douyu_danmu.py (旧单文件)
+- [x] 删除旧 CSV 测试文件
 - [ ] 内置 logging 模块
 
 ---
@@ -75,19 +75,19 @@ BX|- [ ] 删除旧 CSV 测试文件
 
 ### Wave 2: Sync/Async Separation (After T1-T4)
 ```
-├── T5: Create sync collector module
-├── T6: Create async collector module
-├── T7: Implement CSV storage
-└── T8: Implement PostgreSQL storage
+├── T5: Create sync collector module ✅
+├── T6: Create async collector module ✅
+├── T7: Implement CSV storage ✅
+└── T8: Implement PostgreSQL storage ✅
 ```
 
 ### Wave 3: CLI & Integration (After T5-T8)
 ```
-NJ|├── T9: New CLI with positional room_id
-SP|├── T10: Update filename logic (timestamp based)
-PS|├── T11: Add PostgreSQL table creation
-KM|└── T12: Cleanup unused files and add .gitignore
-KZ|└── T13: Final verification
+├── T9: New CLI with positional room_id ✅
+├── T10: Update filename logic (timestamp based) ✅
+├── T11: Add PostgreSQL CLI support ✅
+├── T12: Cleanup unused files and add .gitignore ✅
+└── T13: Final verification ✅
 ├── T10: Update filename logic (timestamp based)
 ├── T11: Add PostgreSQL table creation
 └── T12: Final cleanup and verification
@@ -204,15 +204,15 @@ python -m douyu_danmu 6657 --storage postgres
 ```
 
 ### Final Checklist
-- [ ] No --room-id flag exists
-- [ ] Positional argument works
-- [ ] Default 6657 works
-- [ ] CSV filename includes timestamp
-- [ ] PostgreSQL storage works
-- [ ] loguru used everywhere
-PJ|- [ ] No backward compat code
-ZV|- [ ] sync/async completely separated
-MZ|- [ ] Old files removed (douyu_danmu.py)
-QT|- [ ] .gitignore added
-KM|- [ ] No test CSV files left behind
+- [x] No --room-id flag exists
+- [x] Positional argument works
+- [x] Default 6657 works
+- [x] CSV filename includes timestamp
+- [x] PostgreSQL storage works
+- [x] loguru used everywhere
+- [x] No backward compat code
+- [x] sync/async completely separated
+- [x] Old files removed (douyu_danmu.py)
+- [x] .gitignore added
+- [x] No test CSV files left behind
 - [ ] sync/async completely separated
