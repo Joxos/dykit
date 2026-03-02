@@ -686,3 +686,153 @@ After (T10):
 
 - T11: Add PostgreSQL table creation logic
 - T12: Final cleanup and verification
+
+## T11: PostgreSQL Table Creation - CLI Integration (COMPLETED)
+
+### Task Overview
+Successfully added PostgreSQL storage backend support to the CLI. Users can now run `python -m douyu_danmu --storage postgres` to save danmu messages directly to a PostgreSQL database.
+
+### Completed Actions
+
+1. **Updated `douyu_danmu/__main__.py`** (277 lines):
+   - Added import: `PostgreSQLStorage` from `douyu_danmu.storage` (line 54)
+   - Updated module docstring (lines 1-44):
+     - Added PostgreSQL to list of storage backends
+     - Added usage examples with `--storage postgres` syntax
+     - Documented all 5 new PostgreSQL connection arguments
+   - Updated `_validate_args()` function (line 66):
+     - Added "postgres" to valid storage choices
+     - Updated error message to mention all three options
+   - Updated `_create_storage()` function (lines 92-100):
+     - Added `elif args.storage == "postgres"` branch
+     - Passes room_id and all 5 connection parameters to PostgreSQLStorage constructor
+   - Updated argparse configuration (lines 179-225):
+     - Added "postgres" to `--storage` choices
+     - Added `--pg-host` argument (default: localhost, type: str)
+     - Added `--pg-port` argument (default: 5432, type: int)
+     - Added `--pg-database` argument (default: douyu_danmu, type: str)
+     - Added `--pg-user` argument (default: douyu, type: str)
+     - Added `--pg-password` argument (default: douyu6657, type: str)
+
+### Verification Results
+
+1. **Help Text Verification**:
+   - ✅ `python -m douyu_danmu --help` shows `--storage {csv,console,postgres}`
+   - ✅ All 5 PostgreSQL arguments listed in help output
+   - ✅ Default values correctly displayed
+
+2. **Default Connection Test**:
+   - ✅ `python -m douyu_danmu --storage postgres` connects successfully
+   - ✅ Uses defaults: localhost:5432, database=douyu_danmu, user=douyu
+   - ✅ Table `danmu_6657` created in PostgreSQL
+   - ✅ WebSocket connection and login successful (verified in logs)
+
+3. **Custom Parameters Test**:
+   - ✅ `python -m douyu_danmu 123456 --storage postgres --pg-database custom_db`
+   - ✅ Correctly passes room_id=123456
+   - ✅ Correctly attempts custom_db connection
+   - ✅ PostgreSQL error message confirms parameters are being passed
+
+4. **Syntax and Import Verification**:
+   - ✅ Python syntax check passes
+   - ✅ PostgreSQLStorage import resolves correctly
+   - ✅ No syntax errors in modified file
+
+### Key Technical Implementation
+
+**CLI Argument Flow**:
+```
+argparse parses CLI arguments
+    ↓
+_validate_args() checks storage type is in ("csv", "console", "postgres")
+    ↓
+_create_storage() creates appropriate handler
+    ├─ CSV: CSVStorage(filepath, room_id)
+    ├─ Console: ConsoleStorage(verbose)
+    └─ PostgreSQL: PostgreSQLStorage(room_id, host, port, database, user, password)
+    ↓
+Collector uses handler to persist messages
+```
+
+**Default Values** (User Confirmed Config):
+- Host: localhost
+- Port: 5432
+- Database: douyu_danmu
+- User: douyu
+- Password: douyu6657
+
+**Positional Argument Support**:
+- `python -m douyu_danmu` → room_id defaults to 6657
+- `python -m douyu_danmu 123456` → room_id=123456
+- Works with all storage backends
+
+### Example Usage Patterns
+
+**1. PostgreSQL with defaults**:
+```bash
+python -m douyu_danmu --storage postgres
+# Uses: room_id=6657, localhost:5432, douyu_danmu, douyu/douyu6657
+```
+
+**2. PostgreSQL with custom host**:
+```bash
+python -m douyu_danmu --storage postgres --pg-host db.example.com
+# Connects to db.example.com:5432 with other defaults
+```
+
+**3. PostgreSQL with custom room and database**:
+```bash
+python -m douyu_danmu 999 --storage postgres --pg-database custom_db
+# Saves room 999 messages to custom_db
+```
+
+**4. PostgreSQL async mode**:
+```bash
+python -m douyu_danmu --storage postgres --async -v
+# Async collector with verbose logging to PostgreSQL
+```
+
+### Files Modified
+
+- ✅ `/home/Joxos/source/6657/douyu_danmu/__main__.py` (277 lines)
+  - Import: PostgreSQLStorage added
+  - Docstring: Updated with PostgreSQL examples
+  - Functions: _validate_args() and _create_storage() updated
+  - Arguments: 5 new --pg-* arguments added
+
+### Integration Status
+
+**Wave 2 Completion Summary**:
+- ✅ T4: Storage package structure (base.py created)
+- ✅ T5: Collectors package (sync.py, async_.py extracted)
+- ✅ T6: Cleanup (old collectors.py deleted)
+- ✅ T7: CSVStorage extracted (storage/csv.py)
+- ✅ T8: PostgreSQLStorage implementation (storage/postgres.py)
+- ✅ T9: CLI positional argument (room_id converted)
+- ✅ T10: Timestamp-based filename generation
+- ✅ **T11: PostgreSQL CLI integration (THIS TASK)**
+
+**Wave 2 Status**: ✅ COMPLETE
+
+All aggressive refactoring tasks finished. Project now supports:
+- Three storage backends: CSV, Console, PostgreSQL
+- Async and sync collection modes
+- Flexible CLI with sensible defaults
+- Proper error handling and validation
+
+### Key Insights
+
+1. **PostgreSQLStorage Interface**: Constructor signature matches perfectly with argparse arguments - no translation layer needed
+2. **Default Values**: All defaults match user's confirmed config, making PostgreSQL accessible with zero configuration
+3. **Error Handling**: When custom parameters provided, PostgreSQL error messages clearly indicate which parameters were passed
+4. **CLI Pattern**: Same pattern (choices + validation + factory function) works for any number of storage backends
+5. **Backward Compatibility**: All changes are additive - no breaking changes to existing CSV or console modes
+
+### Next Steps
+
+Wave 2 refactoring complete. Recommendations for Wave 3:
+- Consider adding command validation (test connection before starting collection)
+- Add reconnection logic for network resilience
+- Implement message filtering/search CLI options
+- Add database query/export utilities
+

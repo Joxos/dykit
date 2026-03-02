@@ -1,7 +1,7 @@
 """CLI interface for Douyu Danmu Crawler with async support and pluggable storage.
 
 This module provides a command-line interface for the Douyu Danmu Crawler that supports:
-- Multiple storage backends (CSV, console output)
+- Multiple storage backends (CSV, console output, PostgreSQL database)
 - Synchronous and asynchronous collection modes
 - Configurable room ID, output file, and logging level
 
@@ -18,16 +18,26 @@ Usage Examples:
     # Async mode with CSV output
     python -m douyu_danmu --async --output custom.csv
 
+    # Save to PostgreSQL with default connection parameters
+    python -m douyu_danmu --storage postgres
+
+    # Save to PostgreSQL with custom connection parameters
+    python -m douyu_danmu --storage postgres --pg-host db.example.com --pg-database custom_db
+
     # All options combined
-    python -m douyu_danmu 123456 --storage csv --output danmu.csv --async -v
+    python -m douyu_danmu 123456 --storage postgres --async -v
 
 CLI Arguments:
     ROOM_ID:        Douyu room ID to connect to (positional, default: 6657)
-    --storage:      Storage backend type: "csv" or "console" (default: csv)
-    --output (-o):  CSV file path for csv storage (default: danmu.csv)
+    --storage:      Storage backend type: "csv", "console", or "postgres" (default: csv)
+    --output (-o):  CSV file path for csv storage (default: auto-generated from timestamp)
+    --pg-host:      PostgreSQL host (default: localhost)
+    --pg-port:      PostgreSQL port (default: 5432)
+    --pg-database:  PostgreSQL database name (default: douyu_danmu)
+    --pg-user:      PostgreSQL username (default: douyu)
+    --pg-password:  PostgreSQL password (default: douyu6657)
     --async:        Use async collector instead of sync (default: False)
     --verbose (-v): Enable debug logging (default: False)
-
 Exit Codes:
     0: Normal exit (Ctrl+C)
     1: Configuration error or runtime exception
@@ -41,7 +51,7 @@ import sys
 
 from douyu_danmu.collectors import AsyncCollector, SyncCollector
 from douyu_danmu.log import logger
-from douyu_danmu.storage import ConsoleStorage, CSVStorage
+from douyu_danmu.storage import ConsoleStorage, CSVStorage, PostgreSQLStorage
 
 
 def _validate_args(args: argparse.Namespace) -> None:
@@ -53,9 +63,9 @@ def _validate_args(args: argparse.Namespace) -> None:
     Raises:
         ValueError: If arguments are invalid.
     """
-    if args.storage not in ("csv", "console"):
+    if args.storage not in ("csv", "console", "postgres"):
         raise ValueError(
-            f"Invalid storage type: {args.storage}. Must be 'csv' or 'console'."
+            f"Invalid storage type: {args.storage}. Must be 'csv', 'console', or 'postgres'."
         )
 
     if args.room_id <= 0:
@@ -79,6 +89,15 @@ def _create_storage(args: argparse.Namespace):
         return CSVStorage(filepath=args.output, room_id=args.room_id)
     elif args.storage == "console":
         return ConsoleStorage(verbose=args.verbose)
+    elif args.storage == "postgres":
+        return PostgreSQLStorage(
+            room_id=args.room_id,
+            host=args.pg_host,
+            port=args.pg_port,
+            database=args.pg_database,
+            user=args.pg_user,
+            password=args.pg_password,
+        )
     else:
         raise ValueError(f"Unknown storage type: {args.storage}")
 
@@ -157,9 +176,9 @@ Examples:
     parser.add_argument(
         "--storage",
         type=str,
-        choices=["csv", "console"],
+        choices=["csv", "console", "postgres"],
         default="csv",
-        help="Storage backend: csv or console (default: %(default)s)",
+        help="Storage backend: csv, console, or postgres (default: %(default)s)",
     )
 
     parser.add_argument(
@@ -168,6 +187,41 @@ Examples:
         type=str,
         default=None,
         help="CSV file path for csv storage (default: auto-generated from timestamp)",
+    )
+
+    parser.add_argument(
+        "--pg-host",
+        type=str,
+        default="localhost",
+        help="PostgreSQL host (default: %(default)s)",
+    )
+
+    parser.add_argument(
+        "--pg-port",
+        type=int,
+        default=5432,
+        help="PostgreSQL port (default: %(default)s)",
+    )
+
+    parser.add_argument(
+        "--pg-database",
+        type=str,
+        default="douyu_danmu",
+        help="PostgreSQL database name (default: %(default)s)",
+    )
+
+    parser.add_argument(
+        "--pg-user",
+        type=str,
+        default="douyu",
+        help="PostgreSQL username (default: %(default)s)",
+    )
+
+    parser.add_argument(
+        "--pg-password",
+        type=str,
+        default="douyu6657",
+        help="PostgreSQL password (default: %(default)s)",
     )
 
     parser.add_argument(
