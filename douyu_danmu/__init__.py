@@ -32,6 +32,8 @@ from .protocol import (
     serialize_message,
 )
 from .types import DanmuMessage, MessageType
+from .collectors import AsyncCollector, SyncCollector
+from .storage import CSVStorage, ConsoleStorage, StorageHandler
 
 __version__ = "2.0.0"
 
@@ -50,4 +52,11 @@ __all__ = [
     # Type definitions
     "DanmuMessage",
     "MessageType",
+    # Collectors
+    "SyncCollector",
+    "AsyncCollector",
+    # Storage
+    "StorageHandler",
+    "CSVStorage",
+    "ConsoleStorage",
 ]

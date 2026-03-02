@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "douyu-danmu"
+version = "2.0.0"
+description = "Douyu Live Stream Danmu (弹幕) Collector - A modular, async-capable library for collecting chat messages from Douyu live streams."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Douyu Danmu Crawler Project", email = "contact@example.com"}
+]
+keywords = ["douyu", "danmu", "chat", "websocket", "async"]
+dependencies = [
+    "websocket-client>=1.0.0",
+    "websockets>=12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+    "pyright>=1.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/douyu/danmu"
+Repository = "https://github.com/douyu/danmu"
+Documentation = "https://github.com/douyu/danmu/blob/main/README.md"
+Issues = "https://github.com/douyu/danmu/issues"
+
+[tool.setuptools]
+packages = ["douyu_danmu"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.pyright]
+pythonVersion = "3.9"
+typeCheckingMode = "strict"
+reportUnusedImports = true
+reportUnusedVariables = true
