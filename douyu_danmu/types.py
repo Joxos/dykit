@@ -29,6 +29,12 @@ class MessageType(Enum):
         LOGINREQ: Login request to server (登录请求)
         JOINGROUP: Join room/group message (加入房间)
         MRKL: Heartbeat/keep-alive message (心跳消息)
+        DGB: Gift/reward message (礼物消息)
+        UENTER: User enter room message (用户进场)
+        ANBC: Open noble/VIP message (开通贵族)
+        RNEWBC: Renew noble/VIP message (续费贵族)
+        BLAB: Fan badge level up message (粉丝牌升级)
+        UPGRADE: User level up message (用户升级)
         UNKNOWN: Unknown or unrecognized message type (未知类型)
     """
 
@@ -37,6 +43,12 @@ class MessageType(Enum):
     LOGINREQ = "loginreq"
     JOINGROUP = "joingroup"
     MRKL = "mrkl"
+    DGB = "dgb"
+    UENTER = "uenter"
+    ANBC = "anbc"
+    RNEWBC = "rnewbc"
+    BLAB = "blab"
+    UPGRADE = "upgrade"
     UNKNOWN = "unknown"
 
 
@@ -56,6 +68,7 @@ class DanmuMessage:
         room_id: ID of the streaming room/channel (可能为None).
         msg_type: Type of protocol message (from MessageType enum).
         raw_data: Complete raw message data as dict for debugging.
+        extra: Additional message metadata as dict or None.
     """
 
     timestamp: datetime
@@ -66,6 +79,7 @@ class DanmuMessage:
     room_id: int | None
     msg_type: MessageType
     raw_data: dict[str, str]
+    extra: dict | None
 
     def to_dict(self) -> dict[str, str | int | None]:
         """Convert message to dictionary suitable for CSV writing.
@@ -75,7 +89,8 @@ class DanmuMessage:
 
         Returns:
             Dictionary with keys: timestamp, username, content, user_level,
-            user_id, room_id, msg_type. All values are strings, ints, or None.
+            user_id, room_id, msg_type, extra. All values are strings, ints,
+            None, or dict.
 
         Example:
             >>> msg = DanmuMessage(...)
@@ -90,4 +105,5 @@ class DanmuMessage:
             "user_id": self.user_id,
             "room_id": self.room_id,
             "msg_type": self.msg_type.value,
+            "extra": self.extra,
         }
