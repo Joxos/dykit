@@ -45,9 +45,9 @@ Example Usage:
 
 from __future__ import annotations
 
-import logging
 import struct
 
+from .log import logger
 from .protocol import deserialize_message
 
 # Minimum packet size: 4+4+2+1+1 (header) + 1 (null terminator) = 13 bytes
@@ -112,7 +112,7 @@ class MessageBuffer:
 
             # Sanity check: packet must be at least MIN_PACKET_SIZE
             if total_size < MIN_PACKET_SIZE:
-                logging.warning(
+                logger.warning(
                     f"Invalid packet length {packet_length} (total={total_size}), "
                     f"expected at least {MIN_PACKET_SIZE}. Discarding buffer."
                 )
@@ -156,7 +156,7 @@ class MessageBuffer:
         try:
             message_str = body.decode("utf-8")
         except UnicodeDecodeError as e:
-            logging.warning(
+            logger.warning(
                 f"UTF-8 decode failed for complete packet (len={len(body)}): {e}. "
                 f"First 50 bytes: {body[:50]}"
             )
@@ -166,7 +166,7 @@ class MessageBuffer:
         try:
             return deserialize_message(message_str)
         except Exception as e:
-            logging.warning(
+            logger.warning(
                 f"Failed to deserialize message: {e}. Message: {message_str[:100]}"
             )
             return None

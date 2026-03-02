@@ -23,8 +23,9 @@ Key-Value Serialization:
 
 from __future__ import annotations
 
-import logging
 import struct
+
+from .log import logger
 
 # Douyu WebSocket server URL (use wss:// port 8506)
 DOUYU_WS_URL = "wss://danmuproxy.douyu.com:8506/"
@@ -147,5 +148,5 @@ def decode_message(data: bytes) -> str | None:
         try:
             return body.decode("utf-8", errors="ignore")
         except Exception:
-            logging.warning(f"Failed to decode message (len={len(body)}): {body[:50]}")
+            logger.warning(f"Failed to decode message (len={len(body)}): {body[:50]}")
             return None

@@ -16,6 +16,8 @@ keywords = ["douyu", "danmu", "chat", "websocket", "async"]
 dependencies = [
     "websocket-client>=1.0.0",
     "websockets>=12.0",
+"psycopg2-binary>=2.9.0",
+"loguru>=0.7.0",
 ]
 
 [project.optional-dependencies]

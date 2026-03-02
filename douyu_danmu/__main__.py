@@ -37,24 +37,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import logging
 import sys
 
 from douyu_danmu.collectors import AsyncCollector, SyncCollector
-from douyu_danmu.storage import CSVStorage, ConsoleStorage
-
-
-def _setup_logging(verbose: bool) -> None:
-    """Configure logging based on verbosity level.
-
-    Args:
-        verbose: If True, use DEBUG level; otherwise use INFO level.
-    """
-    log_level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-    )
+from douyu_danmu.log import logger
+from douyu_danmu.storage import ConsoleStorage, CSVStorage
 
 
 def _validate_args(args: argparse.Namespace) -> None:
@@ -108,17 +95,17 @@ async def _async_main(args: argparse.Namespace) -> None:
     try:
         with storage:
             collector = AsyncCollector(args.room_id, storage)
-            logging.info(
+            logger.info(
                 f"Starting async collection from room {args.room_id} "
                 f"(storage: {args.storage})"
             )
             try:
                 await collector.connect()
             except KeyboardInterrupt:
-                logging.info("Interrupted by user")
+                logger.info("Interrupted by user")
                 await collector.stop()
     except Exception as e:
-        logging.error(f"Error during collection: {e}", exc_info=args.verbose)
+        logger.error(f"Error during collection: {e}", exc_info=args.verbose)
         raise
 
 
@@ -132,17 +119,17 @@ def _sync_main(args: argparse.Namespace) -> None:
     try:
         with storage:
             collector = SyncCollector(args.room_id, storage)
-            logging.info(
+            logger.info(
                 f"Starting sync collection from room {args.room_id} "
                 f"(storage: {args.storage})"
             )
             try:
                 collector.connect()
             except KeyboardInterrupt:
-                logging.info("Interrupted by user")
+                logger.info("Interrupted by user")
                 collector.stop()
     except Exception as e:
-        logging.error(f"Error during collection: {e}", exc_info=args.verbose)
+        logger.error(f"Error during collection: {e}", exc_info=args.verbose)
         raise
 
 
@@ -203,14 +190,14 @@ Examples:
     args = parser.parse_args()
 
     # Setup logging
-    _setup_logging(args.verbose)
+    # Loguru is pre-configured in douyu_danmu.log module
 
     try:
         # Validate arguments
         _validate_args(args)
 
         # Log startup
-        logging.info(
+        logger.info(
             f"Douyu Danmu Crawler started - "
             f"room_id={args.room_id}, "
             f"storage={args.storage}, "
@@ -224,13 +211,13 @@ Examples:
             _sync_main(args)
 
     except KeyboardInterrupt:
-        logging.info("Danmu crawler stopped by user")
+        logger.info("Danmu crawler stopped by user")
         sys.exit(0)
     except ValueError as e:
-        logging.error(f"Configuration error: {e}")
+        logger.error(f"Configuration error: {e}")
         sys.exit(1)
     except Exception as e:
-        logging.error(f"Fatal error: {e}", exc_info=True)
+        logger.error(f"Fatal error: {e}", exc_info=True)
         sys.exit(1)
 
 

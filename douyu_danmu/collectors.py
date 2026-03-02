@@ -37,7 +37,6 @@ Design Notes:
 
 from __future__ import annotations
 
-import logging
 import asyncio
 import ssl
 import threading
@@ -45,11 +44,11 @@ import time
 from datetime import datetime
 from typing import Any
 
+import websockets
 from websocket import WebSocketApp
 
-import websockets
-
 from .buffer import MessageBuffer
+from .log import logger
 from .protocol import (
     DOUYU_WS_URL,
     encode_message,
@@ -114,7 +113,7 @@ class SyncCollector:
             msg_type = msg_dict.get("type", "unknown")
 
             if msg_type == "loginres":
-                logging.info("Received loginres - login successful")
+                logger.info("Received loginres - login successful")
             elif msg_type == "chatmsg":
                 # Extract chat message fields
                 nickname = msg_dict.get("nn", "Unknown")
@@ -124,7 +123,7 @@ class SyncCollector:
 
                 # Print to console
                 print(f"[{nickname}] Lv{level}: {content}")
-                logging.debug(
+                logger.debug(
                     f"chatmsg - uid={uid}, nn={nickname}, txt={content}, level={level}"
                 )
 
@@ -142,10 +141,10 @@ class SyncCollector:
                     )
                     self.storage.save(danmu_message)
                 except Exception as e:
-                    logging.error(f"Failed to save danmu message: {e}")
+                    logger.error(f"Failed to save danmu message: {e}")
             else:
                 # Log other message types in debug mode
-                logging.debug(f"Received message type: {msg_type}")
+                logger.debug(f"Received message type: {msg_type}")
 
     def _on_error(self, ws: WebSocketApp, error: object) -> None:
         """Handle WebSocket errors.
@@ -154,7 +153,7 @@ class SyncCollector:
             ws: WebSocket application instance.
             error: Error object from WebSocket.
         """
-        logging.error(f"WebSocket error: {error}")
+        logger.error(f"WebSocket error: {error}")
 
     def _on_close(
         self, ws: WebSocketApp, close_status_code: int, close_msg: str | None
@@ -168,7 +167,7 @@ class SyncCollector:
             close_status_code: Status code for close.
             close_msg: Close message from server.
         """
-        logging.info("WebSocket connection closed")
+        logger.info("WebSocket connection closed")
         self.running = False
 
     def _on_open(self, ws: WebSocketApp) -> None:
@@ -180,19 +179,19 @@ class SyncCollector:
         Args:
             ws: WebSocket application instance.
         """
-        logging.info(f"Connected to {DOUYU_WS_URL}")
+        logger.info(f"Connected to {DOUYU_WS_URL}")
 
         # Send login request
         login_msg = serialize_message({"type": "loginreq", "roomid": self.room_id})
         ws.send(encode_message(login_msg), opcode=0x2)  # 0x2 = binary
-        logging.debug(f"Sent loginreq: {login_msg}")
+        logger.debug(f"Sent loginreq: {login_msg}")
 
         # Send joingroup request
         joingroup_msg = serialize_message(
             {"type": "joingroup", "rid": self.room_id, "gid": -9999}
         )
         ws.send(encode_message(joingroup_msg), opcode=0x2)
-        logging.debug(f"Sent joingroup: {joingroup_msg}")
+        logger.debug(f"Sent joingroup: {joingroup_msg}")
 
         # Start heartbeat thread
         self.running = True
@@ -200,7 +199,7 @@ class SyncCollector:
             target=self._heartbeat_loop, daemon=True
         )
         self.heartbeat_thread.start()
-        logging.debug("Heartbeat thread started")
+        logger.debug("Heartbeat thread started")
 
     def _heartbeat_loop(self) -> None:
         """Send heartbeat messages every 45 seconds.
@@ -214,9 +213,9 @@ class SyncCollector:
                 heartbeat_msg = serialize_message({"type": "mrkl"})
                 try:
                     self.ws.send(encode_message(heartbeat_msg), opcode=0x2)
-                    logging.debug("Sent heartbeat (mrkl)")
+                    logger.debug("Sent heartbeat (mrkl)")
                 except Exception as e:
-                    logging.error(f"Failed to send heartbeat: {e}")
+                    logger.error(f"Failed to send heartbeat: {e}")
                     break
 
     def connect(self) -> None:
@@ -240,7 +239,7 @@ class SyncCollector:
             on_open=self._on_open,
         )
 
-        logging.info("Starting WebSocket connection...")
+        logger.info("Starting WebSocket connection...")
 
         # Use relaxed SSL settings with OpenSSL SECLEVEL=1 for older Douyu servers
         sslopt = {
@@ -260,7 +259,7 @@ class SyncCollector:
         This method is safe to call multiple times and can be called from signal
         handlers or KeyboardInterrupt.
         """
-        logging.info("Stopping collector...")
+        logger.info("Stopping collector...")
         self.running = False
         if self.ws:
             self.ws.close()
@@ -342,14 +341,14 @@ class AsyncCollector:
         ssl_context.verify_mode = ssl.CERT_NONE
         ssl_context.set_ciphers("DEFAULT@SECLEVEL=1")
 
-        logging.info(f"Connecting to {DOUYU_WS_URL}...")
+        logger.info(f"Connecting to {DOUYU_WS_URL}...")
 
         try:
             async with websockets.connect(DOUYU_WS_URL, ssl=ssl_context) as websocket:
                 self._websocket = websocket
                 self._running = True
 
-                logging.info(f"Connected to {DOUYU_WS_URL}")
+                logger.info(f"Connected to {DOUYU_WS_URL}")
 
                 # Send login request
                 await self._send_login()
@@ -359,16 +358,16 @@ class AsyncCollector:
 
                 # Start heartbeat task
                 self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-                logging.debug("Heartbeat task started")
+                logger.debug("Heartbeat task started")
 
                 # Process incoming messages
                 await self._process_messages()
 
         except asyncio.CancelledError:
-            logging.info("Async collector cancelled")
+            logger.info("Async collector cancelled")
             raise
         except Exception as e:
-            logging.error(f"WebSocket connection error: {e}")
+            logger.error(f"WebSocket connection error: {e}")
             raise
         finally:
             # Clean up heartbeat task
@@ -380,7 +379,7 @@ class AsyncCollector:
                     pass
             self._running = False
             self._websocket = None
-            logging.info("AsyncCollector connection closed")
+            logger.info("AsyncCollector connection closed")
 
     async def stop(self) -> None:
         """Stop the collector gracefully.
@@ -391,7 +390,7 @@ class AsyncCollector:
         This method is safe to call multiple times and can be called from signal
         handlers or exception handlers.
         """
-        logging.info("Stopping async collector...")
+        logger.info("Stopping async collector...")
         self._running = False
 
         if self._heartbeat_task:
@@ -413,7 +412,7 @@ class AsyncCollector:
 
         login_msg = serialize_message({"type": "loginreq", "roomid": self.room_id})
         await self._websocket.send(encode_message(login_msg))
-        logging.debug(f"Sent loginreq: {login_msg}")
+        logger.debug(f"Sent loginreq: {login_msg}")
 
     async def _send_joingroup(self) -> None:
         """Send joingroup request to join the specified room.
@@ -431,7 +430,7 @@ class AsyncCollector:
             {"type": "joingroup", "rid": self.room_id, "gid": -9999}
         )
         await self._websocket.send(encode_message(joingroup_msg))
-        logging.debug(f"Sent joingroup: {joingroup_msg}")
+        logger.debug(f"Sent joingroup: {joingroup_msg}")
 
     async def _heartbeat_loop(self) -> None:
         """Send heartbeat messages every 45 seconds.
@@ -449,12 +448,12 @@ class AsyncCollector:
                     heartbeat_msg = serialize_message({"type": "mrkl"})
                     try:
                         await self._websocket.send(encode_message(heartbeat_msg))
-                        logging.debug("Sent heartbeat (mrkl)")
+                        logger.debug("Sent heartbeat (mrkl)")
                     except Exception as e:
-                        logging.error(f"Failed to send heartbeat: {e}")
+                        logger.error(f"Failed to send heartbeat: {e}")
                         break
         except asyncio.CancelledError:
-            logging.debug("Heartbeat loop cancelled")
+            logger.debug("Heartbeat loop cancelled")
             # Normal shutdown, don't re-raise
 
     async def _process_messages(self) -> None:
@@ -485,7 +484,7 @@ class AsyncCollector:
                     msg_type = msg_dict.get("type", "unknown")
 
                     if msg_type == "loginres":
-                        logging.info("Received loginres - login successful")
+                        logger.info("Received loginres - login successful")
                     elif msg_type == "chatmsg":
                         # Extract chat message fields
                         nickname = msg_dict.get("nn", "Unknown")
@@ -495,7 +494,7 @@ class AsyncCollector:
 
                         # Print to console
                         print(f"[{nickname}] Lv{level}: {content}")
-                        logging.debug(
+                        logger.debug(
                             f"chatmsg - uid={uid}, nn={nickname}, txt={content}, level={level}"
                         )
 
@@ -514,11 +513,11 @@ class AsyncCollector:
                             # StorageHandler.save() is synchronous - call directly
                             self.storage.save(danmu_message)
                         except Exception as e:
-                            logging.error(f"Failed to save danmu message: {e}")
+                            logger.error(f"Failed to save danmu message: {e}")
                     else:
                         # Log other message types in debug mode
-                        logging.debug(f"Received message type: {msg_type}")
+                        logger.debug(f"Received message type: {msg_type}")
 
         except asyncio.CancelledError:
-            logging.debug("Message processing cancelled")
+            logger.debug("Message processing cancelled")
             raise

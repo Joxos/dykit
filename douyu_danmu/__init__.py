@@ -21,6 +21,8 @@ Basic usage:
 
 from __future__ import annotations
 
+from .collectors import AsyncCollector, SyncCollector
+
 # Import public API from submodules
 from .protocol import (
     CLIENT_MSG_TYPE,
@@ -31,9 +33,8 @@ from .protocol import (
     encode_message,
     serialize_message,
 )
+from .storage import ConsoleStorage, CSVStorage, StorageHandler
 from .types import DanmuMessage, MessageType
-from .collectors import AsyncCollector, SyncCollector
-from .storage import CSVStorage, ConsoleStorage, StorageHandler
 
 __version__ = "2.0.0"
 

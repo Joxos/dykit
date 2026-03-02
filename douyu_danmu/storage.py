@@ -42,9 +42,9 @@ Design Notes:
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 import csv
 import os
+from abc import ABC, abstractmethod
 from typing import Any
 
 from .types import DanmuMessage, MessageType
