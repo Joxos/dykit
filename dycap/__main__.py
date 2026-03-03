@@ -289,6 +289,194 @@ Examples:
         help='Output file path (single room_id mode only)',
     )
 
+
+
+    # Rank subcommand
+
+    rank_parser = subparsers.add_parser(
+
+        'rank',
+
+        help='Rank danmu messages by frequency',
+
+        description='Rank danmu messages by frequency and optionally save to output',
+
+    )
+
+    rank_parser.add_argument(
+
+        'file',
+
+        help='CSV file to analyze',
+
+    )
+
+    rank_parser.add_argument(
+
+        '-o',
+
+        '--output',
+
+        help='Output file path (optional)',
+
+    )
+
+    rank_parser.add_argument(
+
+        '-n',
+
+        '--top',
+
+        type=int,
+
+        default=50,
+
+        help='Show top N messages by frequency (default: %(default)s)',
+
+    )
+
+    rank_parser.add_argument(
+
+        '--all',
+
+        action='store_true',
+
+        help='Show all messages (ignore --top)',
+
+    )
+
+
+
+    # Cluster subcommand
+
+    cluster_parser = subparsers.add_parser(
+
+        'cluster',
+
+        help='Cluster similar danmu messages',
+
+        description='Cluster similar danmu messages by semantic similarity',
+
+    )
+
+    cluster_parser.add_argument(
+
+        'file',
+
+        help='CSV file to analyze',
+
+    )
+
+    cluster_parser.add_argument(
+
+        '-o',
+
+        '--output',
+
+        help='Output file path (optional)',
+
+    )
+
+    cluster_parser.add_argument(
+
+        '--threshold',
+
+        type=float,
+
+        default=0.6,
+
+        help='Similarity threshold for clustering (default: %(default)s)',
+
+    )
+
+    cluster_parser.add_argument(
+
+        '-n',
+
+        '--top',
+
+        type=int,
+
+        default=500,
+
+        help='Cluster only top N unique messages by frequency (default: %(default)s)',
+
+    )
+
+    cluster_parser.add_argument(
+
+        '--all',
+
+        action='store_true',
+
+        help='Cluster all unique messages (ignore --top)',
+
+    )
+
+
+
+    # Compact subcommand
+
+    compact_parser = subparsers.add_parser(
+
+        'compact',
+
+        help='Compact CSV file by removing rows',
+
+        description='Compact CSV file by removing unwanted message types and fields',
+
+    )
+
+    compact_parser.add_argument(
+
+        'file',
+
+        help='CSV file to compact',
+
+    )
+
+    compact_parser.add_argument(
+
+        '-o',
+
+        '--output',
+
+        help='Output file path (default: {original}_compact.csv)',
+
+    )
+
+    compact_parser.add_argument(
+
+        '--keep-uenter',
+
+        action='store_true',
+
+        help='Keep uenter (user enter room) rows',
+
+    )
+
+    compact_parser.add_argument(
+
+        '--keep-dgb',
+
+        action='store_true',
+
+        help='Keep dgb (gift) rows',
+
+    )
+
+    compact_parser.add_argument(
+
+        '--keep-extra',
+
+        action='store_true',
+
+        help='Keep extra field as-is (otherwise may be simplified)',
+
+    )
+
+
+
     # Parse arguments
     # Pre-process argv to convert positional room_id to --room-id
     processed_argv = _preprocess_argv(sys.argv[1:])
@@ -304,18 +492,55 @@ Examples:
 
         # Log startup
         if args.command == 'prune':
+
             # Run prune tool
+
             from dycap.tools.prune import run_prune
+
             run_prune(args)
+
+        elif args.command == 'rank':
+
+            # Run rank tool
+
+            from dycap.tools.rank import run_rank
+
+            run_rank(args)
+
+        elif args.command == 'cluster':
+
+            # Run cluster tool
+
+            from dycap.tools.cluster import run_cluster
+
+            run_cluster(args)
+
+        elif args.command == 'compact':
+
+            # Run compact tool
+
+            from dycap.tools.compact import run_compact
+
+            run_compact(args)
+
         else:
+
             # Default: capture mode
+
             logger.info(
+
                 f"Douyu Danmu Crawler started - "
+
                 f"room_id={args.room_id}, "
+
                 f"storage={args.storage}"
+
             )
 
+
+
             # Run async collector (sync mode removed)
+
             asyncio.run(_async_main(args))
 
     except KeyboardInterrupt:
