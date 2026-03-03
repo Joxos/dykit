@@ -56,6 +56,31 @@ from dycap.log import logger
 from dycap.storage import ConsoleStorage, CSVStorage, PostgreSQLStorage
 
 
+def _preprocess_argv(argv: list[str]) -> list[str]:
+    """Pre-process argv to handle positional room_id before subcommand parsing.
+
+    When a numeric positional argument is provided before any subcommand,
+    convert it to --room-id for argparse to handle correctly.
+
+    Example:
+        Input:  ['123456', '--storage', 'console']
+        Output: ['--room-id', '123456', '--storage', 'console']
+    """
+    if not argv or argv[0] in ('prune', '-h', '--help', '-v', '--verbose'):
+        return argv
+
+    # Check if first arg looks like a room_id (numeric, not a flag)
+    try:
+        int(argv[0])
+        # It's numeric - treat as room_id and convert to named argument
+        result = argv.copy()
+        result[0] = str(int(result[0]))  # Validate it's still valid
+        result.insert(0, '--room-id')
+        return result
+    except (ValueError, IndexError):
+        # Not numeric, leave argv as-is
+        return argv
+
 def _validate_args(args: argparse.Namespace) -> None:
     """Validate command-line arguments.
 
@@ -173,12 +198,13 @@ Examples:
     # We'll add arguments to the main parser for backward compatibility
 
     parser.add_argument(
-        "room_id",
+        "--room-id",
         type=int,
-        nargs="?",
+        dest="room_id",
         default=6657,
         help="Douyu room ID (default: %(default)s)",
     )
+
 
     parser.add_argument(
         "--storage",
@@ -264,7 +290,10 @@ Examples:
     )
 
     # Parse arguments
-    args = parser.parse_args()
+    # Pre-process argv to convert positional room_id to --room-id
+    processed_argv = _preprocess_argv(sys.argv[1:])
+    args = parser.parse_args(processed_argv)
+
 
     # Setup logging
     # Loguru is pre-configured in dycap.log module

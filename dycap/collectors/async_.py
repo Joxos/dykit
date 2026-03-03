@@ -146,10 +146,14 @@ class AsyncCollector:
                 logger.info(f"Trying server: {url}")
 
                 # Connect with Origin header (required for CDN nodes)
+                # Connect with Origin header (websockets 16.0 API)
+                # Disable built-in ping to avoid conflicts with Douyu heartbeat protocol
                 async with websockets.connect(
                     url,
                     ssl=ssl_context,
-                    extra_headers={"Origin": "https://www.douyu.com"},
+                    origin="https://www.douyu.com",
+                    ping_interval=None,  # Disable websockets built-in ping
+                    ping_timeout=None,   # Disable websockets built-in ping timeout
                 ) as websocket:
                     self._websocket = websocket
                     self._running = True
