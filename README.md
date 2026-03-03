@@ -1,25 +1,28 @@
-# 斗鱼弹幕抓取工具
+# dycap - 斗鱼弹幕抓取工具
 
 实时抓取斗鱼直播间的弹幕消息并保存到CSV文件。
 
 ## 功能特性
 
 - 🔗 实时WebSocket连接到斗鱼弹幕服务器
-- 💬 自动接收并解析弹幕消息（chatmsg）
+- 💬 自动接收并解析多种消息类型（弹幕、礼物、进场等）
 - 📁 支持CSV格式、控制台输出等多种存储方式
 - ⚡ 支持 **同步 (threading)** 和 **异步 (asyncio)** 两种采集模式
 - 🏗️ 模块化架构，支持自定义存储后端 (StorageHandler)
 - 🛡️ 增强的 UTF-8 缓冲区处理，解决断包导致的乱码问题
 - ⏱️ 自动心跳保活（每45秒一次）
 - 🔧 灵活的命令行参数配置
+- 🛠️ 提供 `prune` 工具，支持多文件合并与去重
 - 🛑 优雅的Ctrl+C关闭
 
 ### 最近更新
-- [x] **模块化重构**: 代码已重构为 `douyu_danmu` 包，支持 `python -m douyu_danmu` 运行。
+- [x] **品牌重塑**: 包名更名为 `dycap`，提供更简洁的 `dycap` 命令行工具。
+- [x] **格式升级**: CSV 格式升级至 v3（8列），包含消息类型和 JSON 元数据。
+- [x] **多消息支持**: 支持抓取礼物 (dgb)、进场 (uenter)、广播 (anbc/rnewbc) 等多种消息。
+- [x] **数据清洗**: 新增 `dycap prune` 子命令，方便合并多个采集文件。
 - [x] **异步支持**: 新增 `AsyncCollector`，基于 `asyncio` 和 `websockets` 实现。
 - [x] **存储抽象**: 引入 `StorageHandler`，可自由扩展存储后端。
 - [x] **UTF-8 安全**: `MessageBuffer` 确保多字节字符（表情等）在流式传输中不被截断。
-- [x] **向下兼容**: 保留了原有的命令行使用逻辑。
 
 ## 系统要求
 
@@ -47,10 +50,10 @@ source venv/bin/activate
 venv\Scripts\activate
 ```
 
-### 3. 安装依赖
+### 3. 安装项目
 
 ```bash
-pip install -r requirements.txt
+pip install .
 ```
 
 ## 快速开始 (CLI Usage)
@@ -58,31 +61,31 @@ pip install -r requirements.txt
 ### 基本用法 (同步模式)
 
 ```bash
-python -m douyu_danmu --room-id 6657
+dycap --room-id 6657
 ```
 
 ### 异步模式 (Async Mode)
 
 ```bash
-python -m douyu_danmu --room-id 6657 --async
+dycap --room-id 6657 --async
 ```
 
 ### 控制台实时查看 (不保存文件)
 
 ```bash
-python -m douyu_danmu --storage console --verbose
+dycap --storage console --verbose
 ```
 
 ### 自定义输出文件
 
 ```bash
-python -m douyu_danmu --output my_danmu.csv
+dycap --output my_danmu.csv
 ```
 
 ### 组合使用选项
 
 ```bash
-python -m douyu_danmu --room-id 123456 --storage csv --output chat.csv --async -v
+dycap --room-id 123456 --storage csv --output chat.csv --async -v
 ```
 
 ### 停止抓取
@@ -100,8 +103,8 @@ python -m douyu_danmu --room-id 123456 --storage csv --output chat.csv --async -
 ### 同步采集 (SyncCollector)
 
 ```python
-from douyu_danmu.collectors import SyncCollector
-from douyu_danmu.storage import CSVStorage
+from dycap.collectors import SyncCollector
+from dycap.storage import CSVStorage
 
 # 使用 Context Manager 自动管理存储关闭
 with CSVStorage('output.csv') as storage:
@@ -116,8 +119,8 @@ with CSVStorage('output.csv') as storage:
 
 ```python
 import asyncio
-from douyu_danmu.collectors import AsyncCollector
-from douyu_danmu.storage import ConsoleStorage
+from dycap.collectors import AsyncCollector
+from dycap.storage import ConsoleStorage
 
 async def main():
     # verbose=True 会在控制台打印详细解析后的弹幕内容
@@ -137,8 +140,8 @@ if __name__ == "__main__":
 你可以通过继承 `StorageHandler` 来实现自定义存储（如写入数据库）：
 
 ```python
-from douyu_danmu.storage import StorageHandler
-from douyu_danmu.types import DanmuMessage
+from dycap.storage import StorageHandler
+from dycap.types import DanmuMessage
 
 class MyDatabaseStorage(StorageHandler):
     def save(self, message: DanmuMessage) -> None:
@@ -149,6 +152,7 @@ class MyDatabaseStorage(StorageHandler):
         print("Closing DB connection")
 ```
 
+
 ## CSV输出格式
 
 脚本生成的CSV文件包含以下字段：
@@ -157,24 +161,65 @@ class MyDatabaseStorage(StorageHandler):
 |------|------|------|
 | timestamp | ISO 8601格式的时间戳 | 2026-03-02T01:21:53.282954 |
 | username | 弹幕发送者昵称 | 用户昵称 |
-| content | 弹幕内容 | 这是一条弹幕 |
+| content | 消息内容 | 这是一条弹幕 |
 | user_level | 用户等级 | 20 |
 | user_id | 用户ID | 123456789 |
 | room_id | 直播间ID | 6657 |
+| msg_type | 消息类型 | chatmsg |
+| extra | 扩展信息 (JSON) | {"gfid":"824","gfcnt":"1"} |
+
+### 消息类型 (msg_type)
+- `chatmsg`: 普通弹幕消息
+- `dgb`: 礼物消息
+- `uenter`: 用户进入房间
+- `anbc`: 抽奖/广播
+- `rnewbc`: 房间通知
+- `blab`: 粉丝牌升级
+- `upgrade`: 用户等级升级
+
+### 扩展信息 (extra)
+`extra` 字段存储为 JSON 字符串，根据消息类型不同包含不同的元数据：
+- **dgb (礼物)**: `{"gfid":"824","gfcnt":"15","gfn":"粉丝荧光棒"}`
+- **uenter (进场)**: `{"ic":"avatar/...","bl":"14","bnn":"斗鱼"}`
+- **chatmsg**: 通常为空字符串
 
 ### CSV文件示例
 
 ```csv
-timestamp,username,content,user_level,user_id,room_id
-2026-03-02T01:21:53.282954,用户A,欢迎来直播间,20,123456789,6657
-2026-03-02T01:21:55.512341,用户B,好看的直播,15,987654321,6657
+timestamp,username,content,user_level,user_id,room_id,msg_type,extra
+2026-03-02T01:21:53.282954,用户A,欢迎来直播间,20,123456789,6657,chatmsg,""
+2026-03-03T18:07:32,百岁老人snake,,31,189971835,6979222,dgb,"{""gfid"":""824"",""gfcnt"":""15""}"
+```
+
+
+## 数据清洗工具 (dycap prune)
+
+`prune` 子命令用于合并、清洗多个采集生成的 CSV 文件，支持自动扫描和去重。
+
+### 常用命令
+```bash
+dycap prune                           # 自动扫描当前目录并合并
+dycap prune file1.csv file2.csv       # 合并指定文件
+dycap prune *.csv -o merged.csv       # 指定输出文件名
+```
+
+### JSON 数据处理示例
+你可以使用 Python 轻松解析 `extra` 字段：
+
+```python
+import pandas as pd
+import json
+
+df = pd.read_csv('danmu.csv')
+# 提取礼物名称
+df['gift_name'] = df[df['msg_type'] == 'dgb']['extra'].apply(lambda x: json.loads(x).get('gfn') if x else None)
 ```
 
 ## 命令行参数详解 (CLI Arguments)
 
 ```
-usage: python -m douyu_danmu [-h] [--room-id ROOM_ID] [--storage {csv,console}] 
-                             [--output OUTPUT] [--async] [-v]
+usage: dycap [-h] [--room-id ROOM_ID] [--storage {csv,console}] 
+             [--output OUTPUT] [--async] [-v]
 
 optional arguments:
   -h, --help            显示帮助信息
@@ -185,6 +230,7 @@ optional arguments:
   --async               使用异步(asyncio)采集器
   -v, --verbose         启用详细日志输出 / 控制台详细打印
 ```
+
 
 ## 常见问题
 
@@ -212,7 +258,7 @@ optional arguments:
 
 **临时解决方案：**
 - 手动重启脚本
-- 使用 `while true; do python -m douyu_danmu; sleep 5; done` 实现自动重启循环
+- 使用 `while true; do dycap; sleep 5; done` 实现自动重启循环
 
 ### Q4: CSV文件包含中文乱码？
 
@@ -227,10 +273,10 @@ optional arguments:
 
 ```bash
 # 后台运行（日志输出到文件）
-nohup python -m douyu_danmu --room-id 6657 > danmu.log 2>&1 &
+nohup dycap --room-id 6657 > danmu.log 2>&1 &
 
 # 查看进程
-ps aux | grep douyu_danmu
+ps aux | grep dycap
 
 # 终止进程
 kill <PID>
@@ -239,7 +285,7 @@ kill <PID>
 ## 项目架构 (Architecture)
 
 ```
-douyu_danmu/
+dycap/
 ├── __init__.py          # 公共 API 导出
 ├── __main__.py          # CLI 入口
 ├── types.py             # 数据类型定义 (DanmuMessage, MessageType)
@@ -282,7 +328,7 @@ douyu_danmu/
 ## 已知限制
 
 - **不支持自动重连**：网络中断时脚本会退出，需手动重启
-- **仅获取chatmsg类型消息**：其他消息类型（如礼物、关注等）不被记录
+- **多消息支持**: 自动记录弹幕 (chatmsg)、礼物 (dgb)、进场 (uenter) 等多种消息类型。
 - **单进程运行**：一次只能采集一个直播间的弹幕
 - **无消息去重**：重复的弹幕会被重复记录
 
@@ -303,7 +349,7 @@ pip list | grep -E "websocket|websockets"
 ### 启用调试模式
 
 ```bash
-python -m douyu_danmu -v
+dycap -v
 ```
 
 查看详细日志输出，包括：
