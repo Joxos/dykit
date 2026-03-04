@@ -1098,3 +1098,55 @@ If further work needed:
 3. Add multi-room concurrent collection (if requested)
 4. Create systemd service file for production deployment
 5. Add Prometheus metrics export (observability)
+
+## Task 11: cluster.py - Database Migration
+
+### Changes Made
+- Replaced CSV file reading with PostgreSQL query using psycopg3
+- Added new `cluster(dsn, room_id, threshold, msg_type, limit)` function for DB-based clustering
+- Updated `run_cluster(args)` to call new cluster function instead of reading CSV files
+- Removed imports: csv (at module level), Counter, Path, common.py
+- Preserved `_greedy_cluster()` algorithm byte-for-byte (lines 70-126)
+
+### Implementation Pattern
+**Query for top messages by frequency:**
+```sql
+SELECT content, COUNT(*) as count
+FROM danmaku
+WHERE room_id = %s AND msg_type = %s AND content IS NOT NULL AND content != ''
+GROUP BY content
+ORDER BY count DESC
+LIMIT %s
+```
+
+**CSV output preserved:**
+- Kept same 5-column format when `-o` option specified
+- Lazy import of `csv` module only when needed for output (line 186)
+- This is acceptable as CSV is only used for output, not for data input
+
+### Algorithm Preservation
+The `_greedy_cluster()` function remains unchanged:
+- Input: list of (content, count) tuples sorted by count descending
+- Output: list of clusters (each cluster is list of similar messages)
+- Uses difflib.SequenceMatcher with configurable threshold
+- Optimization: skips comparison if length ratio > 3x
+
+### CLI Changes
+Args changed from:
+- `--file` (CSV input path) → `--dsn` (PostgreSQL connection string)
+- `--room` (room ID to query)
+- `--top` / `--all` → `--limit` (max unique messages)
+- `--threshold` (unchanged)
+- `--output` (unchanged, still CSV output)
+
+### Verification
+- ✅ Import test passes: `python -c "from dytools.tools.cluster import cluster; print('OK')"`
+- ✅ No CSV/common imports at module level (only lazy import for CSV output)
+- ✅ `_greedy_cluster()` function unchanged
+- ✅ Query returns same data structure as Counter.most_common()
+
+### Key Learning
+**CSV module usage is acceptable for OUTPUT, not INPUT:**
+- The requirement was to remove CSV *reading* dependencies (data source)
+- CSV *writing* for optional output file is still valid
+- Using lazy import (line 186) keeps the dependency isolated and conditional

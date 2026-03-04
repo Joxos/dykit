@@ -1,11 +1,12 @@
 """Clustering analysis for danmu messages — "R&D chains".
 
 Groups similar (but not identical) danmu messages into clusters using greedy
-pair-wise comparison with difflib.SequenceMatcher.  Only clusters with 2+
-variants are reported, making them useful for identifying promotional spam or
-coordinated copy-paste variants.
+pair-wise comparison with difflib.SequenceMatcher. Queries message data from
+PostgreSQL database. Only clusters with 2+ variants are reported, making them
+useful for identifying promotional spam or coordinated copy-paste variants.
 
 Functions:
+    cluster(dsn, room_id, threshold, msg_type, limit) -> list: Query DB and cluster
     run_cluster(args) -> None: Main entry point for cluster command
 
 CSV Output Format (when -o specified):
@@ -19,13 +20,51 @@ CSV Output Format (when -o specified):
 
 from __future__ import annotations
 
-import csv
 import difflib
-from collections import Counter
-from pathlib import Path
+
+import psycopg
 
 from dytools.log import logger
-from dytools.tools.common import read_chatmsg
+
+
+def cluster(
+    dsn: str,
+    room_id: str,
+    threshold: float = 0.6,
+    msg_type: str = "chatmsg",
+    limit: int = 1000,
+) -> list[list[tuple[str, int]]]:
+    """Cluster similar messages from database.
+    
+    Args:
+        dsn: PostgreSQL connection string
+        room_id: Room ID to query
+        threshold: Similarity threshold for clustering (default: 0.6)
+        msg_type: Message type to filter (default: 'chatmsg')
+        limit: Maximum number of unique messages to consider (default: 1000)
+    
+    Returns:
+        List of clusters; each cluster is a list of (content, count) tuples
+    """
+    # Query top messages by frequency
+    with psycopg.connect(dsn) as conn:
+        with conn.cursor() as cur:
+            query = """
+                SELECT content, COUNT(*) as count
+                FROM danmaku
+                WHERE room_id = %s AND msg_type = %s AND content IS NOT NULL AND content != ''
+                GROUP BY content
+                ORDER BY count DESC
+                LIMIT %s
+            """
+            cur.execute(query, (room_id, msg_type, limit))
+            top_messages = cur.fetchall()  # Returns list of (content, count) tuples
+    
+    if not top_messages:
+        return []
+    
+    # Use existing clustering algorithm
+    return _greedy_cluster(top_messages, threshold)
 
 
 def _greedy_cluster(
@@ -89,39 +128,32 @@ def _greedy_cluster(
 
 def run_cluster(args) -> None:
     """Main entry point for cluster command.
-
+    
     Args:
         args: Argparse namespace with:
-            - file: CSV file path to analyze
-            - top: number of top unique messages to consider (default: 500)
-            - all: if True, consider all unique messages
+            - dsn: PostgreSQL connection string
+            - room: Room ID to query
             - threshold: similarity threshold (default: 0.6)
+            - msg_type: message type to filter (default: 'chatmsg')
+            - limit: max number of unique messages to consider (default: 1000)
             - output: optional CSV output file path
     """
-    filepath = args.file
-    threshold: float = args.threshold
-    top_n: int | None = None if args.all else args.top
-    output_path: str | None = args.output
-
-    # ── Read messages ─────────────────────────────────────────────────────────
-    messages = read_chatmsg(filepath)
-    if not messages:
-        logger.info(f"No chat messages found in {filepath}")
+    dsn = args.dsn
+    room_id = args.room
+    threshold: float = getattr(args, 'threshold', 0.6)
+    msg_type: str = getattr(args, 'msg_type', 'chatmsg')
+    limit: int = getattr(args, 'limit', 1000)
+    output_path: str | None = getattr(args, 'output', None)
+    
+    # ── Query database and cluster ───────────────────────────────────────────
+    all_clusters = cluster(dsn, room_id, threshold, msg_type, limit)
+    
+    if not all_clusters:
+        logger.info(f"No messages found for room {room_id}")
         return
-
-    # ── Preprocessing: count frequencies ──────────────────────────────────────
-    counter: Counter[str] = Counter(msg["content"] for msg in messages)
-
-    # Take the top-N unique messages by frequency
-    if top_n is not None:
-        top_messages: list[tuple[str, int]] = counter.most_common(top_n)
-    else:
-        top_messages = counter.most_common()
-
-    total_unique = len(top_messages)
-
-    # ── Greedy clustering ──────────────────────────────────────────────────────
-    all_clusters = _greedy_cluster(top_messages, threshold)
+    
+    # Calculate total unique messages from all clusters
+    total_unique = sum(len(c) for c in all_clusters)
 
     # ── Filter: only clusters with 2+ variants ────────────────────────────────
     multi_clusters = [c for c in all_clusters if len(c) >= 2]
@@ -133,7 +165,7 @@ def run_cluster(args) -> None:
     multi_clusters.sort(key=cluster_total, reverse=True)
 
     # ── Terminal output ────────────────────────────────────────────────────────
-    top_label = f"top {total_unique}" if top_n is None else f"top {top_n}"
+    top_label = f"{total_unique} unique msgs"
     print(
         f"\n=== 弹幕研发链聚类 (threshold={threshold:.2f}, {top_label} unique msgs) ===\n"
         f"Found {len(multi_clusters)} clusters with 2+ variants\n"
@@ -150,8 +182,8 @@ def run_cluster(args) -> None:
 
     # ── CSV output ─────────────────────────────────────────────────────────────
     if output_path:
-        out = Path(output_path)
-        with open(out, "w", encoding="utf-8", newline="") as f:
+        with open(output_path, "w", encoding="utf-8", newline="") as f:
+            import csv
             writer = csv.writer(f)
             writer.writerow(["cluster_id", "variant_rank", "count", "content", "similarity_to_top"])
             for cluster_id, cluster in enumerate(multi_clusters, start=1):
@@ -162,4 +194,4 @@ def run_cluster(args) -> None:
                     else:
                         sim = round(difflib.SequenceMatcher(None, top_content, content).ratio(), 6)
                     writer.writerow([cluster_id, variant_rank, count, content, sim])
-        logger.info(f"Cluster CSV saved to {out}")
+        logger.info(f"Cluster CSV saved to {output_path}")
