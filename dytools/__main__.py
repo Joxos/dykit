@@ -40,8 +40,6 @@ from __future__ import annotations
 import asyncio
 import csv
 import sys
-from datetime import datetime
-from pathlib import Path
 
 import click
 import psycopg
@@ -61,7 +59,7 @@ from dytools.tools import cluster, prune, rank
     help="PostgreSQL DSN (or set DYTOOLS_DSN env var)",
 )
 @click.pass_context
-def cli(ctx, dsn):
+def cli(ctx: click.Context, dsn: str) -> None:
     """dytools - Douyu danmu collection and analysis toolkit.
 
     PostgreSQL-first design for collecting and analyzing Douyu live stream
@@ -76,7 +74,7 @@ def cli(ctx, dsn):
 @click.option("-r", "--room", required=True, help="Room ID")
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging")
 @click.pass_context
-def collect(ctx, room, verbose):
+def collect(ctx: click.Context, room: str, verbose: bool) -> None:
     """Start async collector and write to PostgreSQL.
 
     Connects to Douyu live stream room and collects chat messages, gifts,
@@ -132,7 +130,7 @@ def collect(ctx, room, verbose):
 
 @click.option("-c", "--content", is_flag=True, help="Rank by message content")
 @click.pass_context
-def rank_cmd(ctx, room, top, msg_type, days, user, content):
+def rank_cmd(ctx: click.Context, room: str, top: int, msg_type: str, days: int | None, user: bool, content: bool) -> None:
 
     """Rank users or messages by frequency.
 
@@ -246,7 +244,7 @@ def rank_cmd(ctx, room, top, msg_type, days, user, content):
 @cli.command()
 @click.option("-r", "--room", required=True, help="Room ID")
 @click.pass_context
-def prune_cmd(ctx, room):
+def prune_cmd(ctx: click.Context, room: str) -> None:
     """Remove duplicate records from database.
 
     Identifies and removes duplicate danmaku messages based on
@@ -270,7 +268,7 @@ def prune_cmd(ctx, room):
 @click.option("--limit", default=1000, type=int, help="Max messages to analyze (default: 1000)")
 @click.option("-o", "--output", help="Output CSV file (optional)")
 @click.pass_context
-def cluster_cmd(ctx, room, threshold, limit, output):
+def cluster_cmd(ctx: click.Context, room: str, threshold: float, limit: int, output: str | None) -> None:
     """Cluster similar messages by semantic similarity.
 
     Groups similar (but not identical) messages together using text similarity
@@ -341,7 +339,7 @@ def cluster_cmd(ctx, room, threshold, limit, output):
 @click.argument("file", type=click.Path(exists=True))
 @click.option("-r", "--room", required=True, help="Target room ID for imported data")
 @click.pass_context
-def import_csv(ctx, file, room):
+def import_csv(ctx: click.Context, file: str, room: str) -> None:
     """Batch import CSV to PostgreSQL.
 
     Imports danmaku messages from CSV file into PostgreSQL database.
@@ -400,7 +398,7 @@ def import_csv(ctx, file, room):
 @click.option("-r", "--room", required=True, help="Room ID")
 @click.option("-o", "--output", required=True, help="Output CSV file")
 @click.pass_context
-def export(ctx, room, output):
+def export(ctx: click.Context, room: str, output: str) -> None:
     """Export PostgreSQL to CSV.
 
     Exports all danmaku messages for specified room from PostgreSQL to CSV file.
@@ -451,7 +449,7 @@ def export(ctx, room, output):
 
 @cli.command()
 @click.pass_context
-def init_db(ctx):
+def init_db(ctx: click.Context) -> None:
     """Initialize database schema.
 
     Creates the danmaku table and indexes in PostgreSQL database.
