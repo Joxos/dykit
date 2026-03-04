@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import psycopg2
+import psycopg
 
 
 from ..types import DanmuMessage
@@ -91,7 +91,7 @@ class PostgreSQLStorage(StorageHandler):
             password: Password for authentication.
 
         Raises:
-            psycopg2.Error: If connection fails or table creation fails.
+            psycopg.Error: If connection fails or table creation fails.
         """
         self.room_id = room_id
         self.connection: Any = None
@@ -100,7 +100,7 @@ class PostgreSQLStorage(StorageHandler):
 
         try:
             # Establish database connection
-            self.connection = psycopg2.connect(
+            self.connection = psycopg.connect(
                 host=host,
                 port=port,
                 database=database,
@@ -110,7 +110,7 @@ class PostgreSQLStorage(StorageHandler):
 
             # Create table if not exists
             self._create_table()
-        except psycopg2.Error:
+        except psycopg.Error:
             if self.connection is not None:
                 self.connection.close()
             raise
@@ -123,7 +123,7 @@ class PostgreSQLStorage(StorageHandler):
         fields as columns, plus indexes for efficient querying.
 
         Raises:
-            psycopg2.Error: If table creation fails.
+            psycopg.Error: If table creation fails.
         """
         if self.connection is None:
             return
@@ -165,7 +165,7 @@ class PostgreSQLStorage(StorageHandler):
             cursor.execute(create_table_query)
             self.connection.commit()
             cursor.close()
-        except psycopg2.Error:
+        except psycopg.Error:
             if self.connection is not None:
                 self.connection.rollback()
             raise
@@ -188,7 +188,7 @@ class PostgreSQLStorage(StorageHandler):
             None
 
         Raises:
-            psycopg2.Error: If the insert operation fails.
+            psycopg.Error: If the insert operation fails.
         """
         if self.connection is None:
             return
@@ -230,7 +230,7 @@ class PostgreSQLStorage(StorageHandler):
             )
             self.connection.commit()
             cursor.close()
-        except psycopg2.Error:
+        except psycopg.Error:
             if self.connection is not None:
                 self.connection.rollback()
             raise
