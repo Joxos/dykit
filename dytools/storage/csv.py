@@ -7,7 +7,6 @@ to CSV files with automatic header creation and immediate write flushing.
 from __future__ import annotations
 
 import csv
-import json
 import os
 from datetime import datetime
 from typing import Any
@@ -114,7 +113,13 @@ class CSVStorage(StorageHandler):
                     "user_id",
                     "room_id",
                     "msg_type",
-                    "extra",
+                    "gift_id",
+                    "gift_count",
+                    "gift_name",
+                    "badge_level",
+                    "badge_name",
+                    "noble_level",
+                    "avatar_url",
                 ]
             )
             self.csv_file.flush()
@@ -174,7 +179,13 @@ class CSVStorage(StorageHandler):
                     msg_dict["user_id"],
                     msg_dict["room_id"],
                     msg_dict["msg_type"],
-                    json.dumps(msg_dict["extra"]) if msg_dict["extra"] else "",
+                    msg_dict["gift_id"],
+                    msg_dict["gift_count"],
+                    msg_dict["gift_name"],
+                    msg_dict["badge_level"],
+                    msg_dict["badge_name"],
+                    msg_dict["noble_level"],
+                    msg_dict["avatar_url"],
                 ]
             )
             # Flush immediately to disk for persistence

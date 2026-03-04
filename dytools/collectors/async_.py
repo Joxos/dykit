@@ -274,35 +274,43 @@ class AsyncCollector:
             logger.debug("Heartbeat loop cancelled")
             # Normal shutdown, don't re-raise
 
-    def _build_danmu_message(self, msg_dict: dict, msg_type: MessageType) -> DanmuMessage:
-        """Build a DanmuMessage from a parsed protocol dict.
-
-        Extracts common fields and maps them to typed DanmuMessage attributes.
-        Handles field name variations across message types (uid/unk, nn/donk, rid/drid).
-
-        Args:
-            msg_dict: Parsed protocol message dictionary
-            msg_type: MessageType enum value for this message
-
-        Returns:
-            DanmuMessage instance with typed fields populated
-        """
-        uid = msg_dict.get("uid") or msg_dict.get("unk")  # anbc/rnewbc uses unk
-        nn = msg_dict.get("nn") or msg_dict.get("donk")  # anbc/rnewbc uses donk
-        rid = msg_dict.get("rid") or msg_dict.get("drid")  # anbc/rnewbc uses drid
+    def _build_danmu_message(self, msg_dict: dict[str, str], msg_type: MessageType) -> DanmuMessage:
+        """Build DanmuMessage from raw message dict with typed flattened fields."""
+        uid = msg_dict.get("uid") or msg_dict.get("unk")
+        nn = msg_dict.get("nn") or msg_dict.get("donk")
+        rid = msg_dict.get("rid") or msg_dict.get("drid")
         room_id = int(rid) if rid and str(rid).isdigit() else self.room_id
         level = msg_dict.get("level", "0")
-
-        return DanmuMessage(
-            timestamp=datetime.now(),
-            username=nn,
-            content=None,  # Non-chatmsg types have no text content
-            user_level=int(level) if str(level).isdigit() else 0,
-            user_id=uid,
-            room_id=room_id,
-            msg_type=msg_type,
-            raw_data=msg_dict,
-        )
+        
+        # Base kwargs
+        kwargs = {
+            "timestamp": datetime.now(),
+            "username": nn,
+            "content": None,
+            "user_level": int(level) if str(level).isdigit() else 0,
+            "user_id": uid,
+            "room_id": room_id,
+            "msg_type": msg_type,
+            "raw_data": msg_dict,
+        }
+        
+        # Populate flattened fields by message type
+        if msg_type == MessageType.DGB:
+            kwargs["gift_id"] = msg_dict.get("gfid")
+            gfcnt = msg_dict.get("gfcnt")
+            kwargs["gift_count"] = int(gfcnt) if gfcnt and gfcnt.isdigit() else None
+            kwargs["gift_name"] = msg_dict.get("gfn")
+        elif msg_type in (MessageType.UENTER, MessageType.BLAB):
+            bl = msg_dict.get("bl")
+            kwargs["badge_level"] = int(bl) if bl and bl.isdigit() else None
+            kwargs["badge_name"] = msg_dict.get("bnn")
+            if msg_type == MessageType.UENTER:
+                kwargs["avatar_url"] = msg_dict.get("ic")
+        elif msg_type in (MessageType.ANBC, MessageType.RNEWBC):
+            nl = msg_dict.get("nl")
+            kwargs["noble_level"] = int(nl) if nl and nl.isdigit() else None
+        
+        return DanmuMessage(**kwargs)
 
     async def _process_messages(self) -> None:
         """Main message receive loop.
