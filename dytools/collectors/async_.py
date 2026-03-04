@@ -41,6 +41,7 @@ from datetime import datetime
 from typing import Any
 
 import websockets
+from websockets import Origin
 
 from ..buffer import MessageBuffer
 from ..log import logger
@@ -109,7 +110,7 @@ class AsyncCollector:
         self.storage = storage
         self.ws_url_override = ws_url
         self._buffer = MessageBuffer()
-        self._heartbeat_task: asyncio.Task | None = None
+        self._heartbeat_task: asyncio.Task[None] | None = None
         self._running = False
         self._websocket: Any = None
 
@@ -151,7 +152,7 @@ class AsyncCollector:
                 async with websockets.connect(
                     url,
                     ssl=ssl_context,
-                    origin="https://www.douyu.com",
+                    origin=Origin("https://www.douyu.com"),
                     ping_interval=None,  # Disable websockets built-in ping
                     ping_timeout=None,   # Disable websockets built-in ping timeout
                 ) as websocket:
