@@ -8,7 +8,7 @@ version = "4.0.0"
 description = "Douyu Live Stream Danmu (弹幕) Collector - A modular, async-capable library for collecting chat messages from Douyu live streams."
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Douyu Danmu Crawler Project", email = "contact@example.com"}
 ]
