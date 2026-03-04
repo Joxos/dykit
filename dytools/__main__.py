@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import json
 import sys
 from typing import Any
 
@@ -471,18 +472,41 @@ def import_csv(ctx: click.Context, file: str, room: str) -> None:
                         content = row[2]
                         user_level = int(row[3]) if row[3] else None
                         user_id = row[4]
-                        # Use target room_id from CLI arg (override CSV)
+                        # row[5] = room_id — overridden by CLI --room arg
                         msg_type = row[6]
 
-                        # Insert into database
+                        # Parse extra JSON field (column 7, optional)
+                        extra_str = row[7] if len(row) > 7 else ""
+                        extra: dict[str, str] = {}
+                        if extra_str:
+                            try:
+                                extra = json.loads(extra_str)
+                            except (json.JSONDecodeError, ValueError):
+                                pass
+
+                        # Map extra fields to dedicated columns
+                        gift_id = extra.get("gfid")
+                        gfcnt = extra.get("gfcnt")
+                        gift_count = int(gfcnt) if gfcnt and str(gfcnt).isdigit() else None
+                        gift_name = extra.get("gfn")
+                        bl = extra.get("bl")
+                        badge_level = int(bl) if bl and str(bl).isdigit() else None
+                        badge_name = extra.get("bnn")
+                        nl = extra.get("nl")
+                        noble_level = int(nl) if nl and str(nl).isdigit() else None
+                        avatar_url = extra.get("ic")
+
+                        # Insert into database with all 14 data columns
                         insert_query = """
                             INSERT INTO danmaku (
-                                timestamp, room_id, msg_type, user_id, username, content, user_level
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                timestamp, room_id, msg_type, user_id, username, content, user_level,
+                                gift_id, gift_count, gift_name, badge_level, badge_name, noble_level, avatar_url
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """
                         cur.execute(
                             insert_query,
-                            [timestamp, room, msg_type, user_id, username, content, user_level],
+                            [timestamp, room, msg_type, user_id, username, content, user_level,
+                             gift_id, gift_count, gift_name, badge_level, badge_name, noble_level, avatar_url],
                         )
                         count += 1
 
