@@ -156,7 +156,7 @@ def collect(ctx: click.Context, room: str, verbose: bool, msg_types: str | None)
 @click.option("--type", "msg_type", default="chatmsg", help="Message type (default: chatmsg)")
 @click.option("--days", type=int, help="Days to look back (default: all time)")
 @click.option("-u", "--user", is_flag=True, help="Rank by username (default)")
-@click.option("-c", "--content", is_flag=True, help="Rank by message content")
+@click.option("-c", "--content", "content_mode", is_flag=True, help="Rank by message content")
 @click.pass_context
 def rank_cmd(
     ctx: click.Context,
