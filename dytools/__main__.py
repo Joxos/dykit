@@ -96,11 +96,11 @@ def cli(ctx: click.Context, dsn: str | None) -> None:
 @click.option("-r", "--room", required=True, help="Room ID")
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging")
 @click.option(
-    "--type",
-    "msg_types",
+    "--with",
+    "msg_types_include",
     default=None,
     help=(
-        "Filter message types to collect (comma-separated). "
+        "Include message types to collect (comma-separated). "
         "Default: all types.\n\n"
         "Available types:\n"
         "  chatmsg   - 弹幕消息 (chat/danmu)\n"
@@ -115,11 +115,22 @@ def cli(ctx: click.Context, dsn: str | None) -> None:
         "  loginreq  - 登录请求 (login request)\n"
         "  joingroup - 加入房间 (join room)\n"
         "  unknown   - 未知类型 (unknown)\n\n"
-        "Example: --type chatmsg,dgb,uenter"
+        "Example: --with chatmsg,dgb,uenter"
+    ),
+)
+@click.option(
+    "--without",
+    "msg_types_exclude",
+    default=None,
+    help=(
+        "Exclude message types from collection (comma-separated). "
+        "Default: none (collect all unless --with is used).\n\n"
+        "Available types: same as --with above.\n\n"
+        "Example: --without uenter,loginreq"
     ),
 )
 @click.pass_context
-def collect(ctx: click.Context, room: str, verbose: bool, msg_types: str | None) -> None:
+def collect(ctx: click.Context, room: str, verbose: bool, msg_types_include: str | None, msg_types_exclude: str | None) -> None:
     """Start async collector and write to PostgreSQL.
 
     Connects to Douyu live stream room and collects chat messages, gifts,
@@ -131,8 +142,19 @@ def collect(ctx: click.Context, room: str, verbose: bool, msg_types: str | None)
         click.echo("Error: Missing --dsn option or DYTOOLS_DSN environment variable", err=True)
         sys.exit(1)
 
-    # Parse comma-separated type filter
-    type_filter = [t.strip() for t in msg_types.split(",")] if msg_types else None
+    dsn = ctx.obj.get("dsn")
+    if not dsn:
+        click.echo("Error: Missing --dsn option or DYTOOLS_DSN environment variable", err=True)
+        sys.exit(1)
+
+    # Validate mutual exclusion: cannot use both --with and --without
+    if msg_types_include is not None and msg_types_exclude is not None:
+        click.echo("Error: Cannot use both --with and --without together", err=True)
+        sys.exit(1)
+
+    # Parse comma-separated type filters
+    type_filter = [t.strip() for t in msg_types_include.split(",")] if msg_types_include else None
+    type_exclude = [t.strip() for t in msg_types_exclude.split(",")] if msg_types_exclude else None
 
     async def run_collector():
         try:
@@ -149,7 +171,7 @@ def collect(ctx: click.Context, room: str, verbose: bool, msg_types: str | None)
                 password=conn_params.get("password", ""),
             )
             with storage:
-                collector = AsyncCollector(room, storage, type_filter=type_filter)
+                collector = AsyncCollector(room, storage, type_filter=type_filter, type_exclude=type_exclude)
                 logger.info(f"Starting async collection from room {room} (storage: PostgreSQL)")
                 try:
                     await collector.connect()

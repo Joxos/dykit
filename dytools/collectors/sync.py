@@ -77,6 +77,7 @@ class SyncCollector:
         storage: StorageHandler,
         ws_url: str | None = None,
         type_filter: list[str] | None = None,
+        type_exclude: list[str] | None = None,
     ) -> None:
         """Initialize the synchronous Douyu danmu collector.
 
@@ -90,8 +91,10 @@ class SyncCollector:
             ws_url: Optional manual WebSocket URL override. If provided, bypasses
                 discovery and uses this URL directly.
             type_filter: Optional list of message types to collect (e.g., ['chatmsg', 'dgb']).
-                If None, all message types are collected. Protocol messages (loginres, mrkl)
                 are never filtered.
+            type_exclude: Optional list of message types to exclude from collection.
+                If None, no messages are excluded. Protocol messages (loginres, mrkl) are
+                never excluded.
         """
 
         self.room_id = room_id
@@ -103,6 +106,7 @@ class SyncCollector:
         self.running = False
         self._buffer = MessageBuffer()
         self._type_filter = type_filter
+        self._type_exclude = type_exclude
 
     def _build_danmu_message(self, msg_dict: dict[str, str], msg_type: MessageType) -> DanmuMessage:
         """Build DanmuMessage from raw message dict with typed flattened fields."""
@@ -163,10 +167,16 @@ class SyncCollector:
             if msg_type == "loginres":
                 logger.info("Received loginres - login successful")
 
-            # Filter message types if --type specified (never filter protocol messages)
+            # Filter message types if --with specified (never filter protocol messages)
             if (
                 self._type_filter is not None
                 and msg_type not in self._type_filter
+                and msg_type not in ("loginres", "mrkl")
+            ):
+                continue
+            if (
+                self._type_exclude is not None
+                and msg_type in self._type_exclude
                 and msg_type not in ("loginres", "mrkl")
             ):
                 continue

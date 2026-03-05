@@ -98,6 +98,7 @@ class AsyncCollector:
         storage: StorageHandler,
         ws_url: str | None = None,
         type_filter: list[str] | None = None,
+        type_exclude: list[str] | None = None,
     ) -> None:
         """Initialize the asynchronous Douyu danmu collector.
 
@@ -113,6 +114,9 @@ class AsyncCollector:
             type_filter: Optional list of message types to collect (e.g., ['chatmsg', 'dgb']).
                 If None, all message types are collected. Protocol messages (loginres, mrkl)
                 are never filtered.
+            type_exclude: Optional list of message types to exclude from collection.
+                If None, no messages are excluded. Protocol messages (loginres, mrkl) are
+                never excluded.
         """
 
         self.room_id = room_id
@@ -124,6 +128,7 @@ class AsyncCollector:
         self._running = False
         self._websocket: Any = None
         self._type_filter = type_filter
+        self._type_exclude = type_exclude
 
     async def connect(self) -> None:
         """Connect to Douyu WebSocket server and start receiving messages.
@@ -356,10 +361,16 @@ class AsyncCollector:
                     if msg_type == "loginres":
                         logger.info("Received loginres - login successful")
 
-                    # Filter message types if --type specified (never filter protocol messages)
+                    # Filter message types if --with specified (never filter protocol messages)
                     if (
                         self._type_filter is not None
                         and msg_type not in self._type_filter
+                        and msg_type not in ("loginres", "mrkl")
+                    ):
+                        continue
+                    if (
+                        self._type_exclude is not None
+                        and msg_type in self._type_exclude
                         and msg_type not in ("loginres", "mrkl")
                     ):
                         continue
