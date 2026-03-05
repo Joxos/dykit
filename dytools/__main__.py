@@ -99,7 +99,24 @@ def cli(ctx: click.Context, dsn: str | None) -> None:
     "--type",
     "msg_types",
     default=None,
-    help="Comma-separated message types to collect (e.g., chatmsg,dgb). Default: all",
+    help=(
+        "Filter message types to collect (comma-separated). "
+        "Default: all types.\n\n"
+        "Available types:\n"
+        "  chatmsg   - 弹幕消息 (chat/danmu)\n"
+        "  dgb       - 礼物消息 (gift)\n"
+        "  uenter    - 用户进场 (user enter)\n"
+        "  mrkl      - 心跳消息 (heartbeat)\n"
+        "  anbc      - 开通贵族 (open noble/VIP)\n"
+        "  rnewbc    - 续费贵族 (renew noble/VIP)\n"
+        "  blab      - 粉丝牌升级 (fan badge level up)\n"
+        "  upgrade   - 用户升级 (user level up)\n"
+        "  loginres  - 登录响应 (login response)\n"
+        "  loginreq  - 登录请求 (login request)\n"
+        "  joingroup - 加入房间 (join room)\n"
+        "  unknown   - 未知类型 (unknown)\n\n"
+        "Example: --type chatmsg,dgb,uenter"
+    ),
 )
 @click.pass_context
 def collect(ctx: click.Context, room: str, verbose: bool, msg_types: str | None) -> None:
