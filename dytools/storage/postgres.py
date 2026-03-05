@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 import psycopg
-
+from psycopg.types.json import Jsonb
 
 from ..types import DanmuMessage
 from .base import StorageHandler
@@ -149,7 +149,8 @@ class PostgreSQLStorage(StorageHandler):
                 -- Noble fields (anbc, rnewbc)
                 noble_level INTEGER,
                 -- Avatar (uenter)
-                avatar_url  TEXT
+                avatar_url  TEXT,
+                raw_data    JSONB
             );
             CREATE INDEX IF NOT EXISTS idx_danmaku_room_time
                 ON danmaku(room_id, timestamp DESC);
@@ -198,10 +199,10 @@ class PostgreSQLStorage(StorageHandler):
             INSERT INTO danmaku (
                 timestamp, room_id, msg_type, user_id, username, content,
                 user_level, gift_id, gift_count, gift_name,
-                badge_level, badge_name, noble_level, avatar_url
+                badge_level, badge_name, noble_level, avatar_url, raw_data
             )
             VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
             """
 
@@ -223,6 +224,7 @@ class PostgreSQLStorage(StorageHandler):
                     message.badge_name,
                     message.noble_level,
                     message.avatar_url,
+                    Jsonb(message.raw_data) if message.raw_data else None,
                 ),
             )
             self.connection.commit()
