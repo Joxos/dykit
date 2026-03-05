@@ -43,7 +43,6 @@ import json
 import sys
 from typing import Any
 
-
 import click
 import psycopg
 from psycopg import conninfo as psycopg_conninfo
@@ -500,13 +499,13 @@ def import_csv(ctx: click.Context, file: str, room: str) -> None:
                         insert_query = """
                             INSERT INTO danmaku (
                                 timestamp, room_id, msg_type, user_id, username, content, user_level,
-                                gift_id, gift_count, gift_name, badge_level, badge_name, noble_level, avatar_url
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                gift_id, gift_count, gift_name, badge_level, badge_name, noble_level, avatar_url, raw_data
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """
                         cur.execute(
                             insert_query,
                             [timestamp, room, msg_type, user_id, username, content, user_level,
-                             gift_id, gift_count, gift_name, badge_level, badge_name, noble_level, avatar_url],
+                             gift_id, gift_count, gift_name, badge_level, badge_name, noble_level, avatar_url, None],
                         )
                         count += 1
 
@@ -604,16 +603,17 @@ def init_db(ctx: click.Context) -> None:
                         badge_level INTEGER,
                         badge_name  TEXT,
                         noble_level INTEGER,
-                        avatar_url  TEXT
+                        avatar_url  TEXT,
+                        raw_data    JSONB
                     );
 
-                    CREATE INDEX IF NOT EXISTS idx_danmaku_room_time 
+                    CREATE INDEX IF NOT EXISTS idx_danmaku_room_time
                     ON danmaku(room_id, timestamp DESC);
 
-                    CREATE INDEX IF NOT EXISTS idx_danmaku_user_id 
+                    CREATE INDEX IF NOT EXISTS idx_danmaku_user_id
                     ON danmaku(user_id);
 
-                    CREATE INDEX IF NOT EXISTS idx_danmaku_msg_type 
+                    CREATE INDEX IF NOT EXISTS idx_danmaku_msg_type
                     ON danmaku(msg_type);
                 """
                 cur.execute(create_table_query)
