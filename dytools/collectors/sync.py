@@ -32,6 +32,7 @@ Technical Notes:
 
 from __future__ import annotations
 
+import re
 import ssl
 import threading
 import time
@@ -107,6 +108,8 @@ class SyncCollector:
         """Build DanmuMessage from raw message dict with typed flattened fields."""
         uid = msg_dict.get("uid") or msg_dict.get("unk")
         nn = msg_dict.get("nn") or msg_dict.get("donk")
+        if nn:
+            nn = re.sub(r'^\s+|\s+$', '', nn)
         # rid = msg_dict.get("rid") or msg_dict.get("drid")  # No longer used, composite room_id used instead
         room_id = f"{self.room_id}:{self._real_room_id}"
         level = msg_dict.get("level", "0")
@@ -169,8 +172,8 @@ class SyncCollector:
                 continue
             elif msg_type == "chatmsg":
                 # Extract chat message fields
-                nickname = msg_dict.get("nn", "Unknown")
-                content = msg_dict.get("txt", "").strip()
+                nickname = re.sub(r'^\s+|\s+$', '', msg_dict.get("nn", "Unknown"))
+                content = re.sub(r'^\s+|\s+$', '', msg_dict.get("txt", ""))
                 level = msg_dict.get("level", "0")
                 uid = msg_dict.get("uid", "0")
 
