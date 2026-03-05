@@ -75,8 +75,9 @@ def cli(ctx: click.Context, dsn: str) -> None:
 @cli.command()
 @click.option("-r", "--room", required=True, help="Room ID")
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging")
+@click.option("--type", "msg_types", default=None, help="Comma-separated message types to collect (e.g., chatmsg,dgb). Default: all")
 @click.pass_context
-def collect(ctx: click.Context, room: str, verbose: bool) -> None:
+def collect(ctx: click.Context, room: str, verbose: bool, msg_types: str | None) -> None:
     """Start async collector and write to PostgreSQL.
 
     Connects to Douyu live stream room and collects chat messages, gifts,
@@ -84,6 +85,9 @@ def collect(ctx: click.Context, room: str, verbose: bool) -> None:
     Press Ctrl+C to stop gracefully.
     """
     dsn = ctx.obj["dsn"]
+
+    # Parse comma-separated type filter
+    type_filter = [t.strip() for t in msg_types.split(",")] if msg_types else None
 
     async def run_collector():
         try:
@@ -98,7 +102,7 @@ def collect(ctx: click.Context, room: str, verbose: bool) -> None:
                 password=conn_params.get("password", ""),
             )
             with storage:
-                collector = AsyncCollector(int(room), storage)
+                collector = AsyncCollector(int(room), storage, type_filter=type_filter)
                 logger.info(f"Starting async collection from room {room} (storage: PostgreSQL)")
                 try:
                     await collector.connect()

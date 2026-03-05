@@ -91,7 +91,7 @@ class AsyncCollector:
         _websocket: Active WebSocket connection (None until connected).
     """
 
-    def __init__(self, room_id: int, storage: StorageHandler, ws_url: str | None = None) -> None:
+    def __init__(self, room_id: int, storage: StorageHandler, ws_url: str | None = None, type_filter: list[str] | None = None) -> None:
         """Initialize the asynchronous Douyu danmu collector.
 
         Args:
@@ -103,6 +103,9 @@ class AsyncCollector:
                 manager).
             ws_url: Optional manual WebSocket URL override. If provided, bypasses
                 discovery and uses this URL directly.
+            type_filter: Optional list of message types to collect (e.g., ['chatmsg', 'dgb']).
+                If None, all message types are collected. Protocol messages (loginres, mrkl)
+                are never filtered.
         """
 
         self.room_id = room_id
@@ -113,6 +116,7 @@ class AsyncCollector:
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._running = False
         self._websocket: Any = None
+        self._type_filter = type_filter
 
     async def connect(self) -> None:
         """Connect to Douyu WebSocket server and start receiving messages.
@@ -342,6 +346,10 @@ class AsyncCollector:
 
                     if msg_type == "loginres":
                         logger.info("Received loginres - login successful")
+
+                    # Filter message types if --type specified (never filter protocol messages)
+                    if self._type_filter is not None and msg_type not in self._type_filter and msg_type not in ("loginres", "mrkl"):
+                        continue
                     elif msg_type == "chatmsg":
                         # Extract chat message fields
                         nickname = msg_dict.get("nn", "Unknown")
