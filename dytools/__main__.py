@@ -868,10 +868,8 @@ def status_service(service_name: str) -> None:
     """
     sm = ServiceManager()
     try:
-        status_dict = sm.status(service_name)
-        # Print key: value pairs
-        for key, value in status_dict.items():
-            click.echo(f"{key}: {value}")
+        output = sm.status(service_name)
+        click.echo(output, nl=False)  # nl=False to avoid extra newline
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)

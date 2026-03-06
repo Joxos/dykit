@@ -256,34 +256,32 @@ class ServiceManager:
 
         click.echo(f"✓ Service {service_name} restarted")
 
-    def status(self, service_name: str) -> dict[str, str]:
-        """Get machine-readable status information for a service.
+    def status(self, service_name: str) -> str:
+        """Get human-readable status information for a service.
+
+        Returns the formatted output from systemctl status, including:
+        - Load state (loaded/not-found)
+        - Active state (active/inactive/failed)
+        - Main PID and process info
+        - Memory and CPU usage
+        - Recent log entries
 
         Args:
             service_name: Name of the service to query (without .service suffix).
 
         Returns:
-            Dictionary with systemd property key-value pairs (e.g., LoadState,
-            ActiveState, SubState, MainPID, ExecMainStatus).
+            Formatted status output string (may contain ANSI color codes).
 
         Raises:
-            RuntimeError: If systemctl show command fails.
+            RuntimeError: If service does not exist (exit code 4).
         """
-        result = self._systemctl(["show", f"{service_name}.service", "--no-pager"])
-        if result.returncode != 0:
-            raise RuntimeError(f"show failed: {result.stderr}")
+        result = self._systemctl(["status", f"{service_name}.service"])
 
-        # Parse key=value lines into dict
-        status_dict = {}
-        for line in result.stdout.strip().split("\n"):
-            if "=" in line:
-                key, _, value = line.partition("=")
-                status_dict[key] = value
+        # Exit codes: 0=active, 1/2/3=inactive/failed (all valid), 4=not found
+        if result.returncode == 4:
+            raise RuntimeError(f"Service {service_name} not found")
 
-        # Check if service was found (LoadError indicates service doesn't exist)
-        if status_dict.get("LoadError"):
-            raise RuntimeError(f"Service '{service_name}' not found")
-        return status_dict
+        return result.stdout
 
     def logs(self, service_name: str, lines: int = 50) -> str:
         """Retrieve recent log output from a service.
