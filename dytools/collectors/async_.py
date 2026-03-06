@@ -46,6 +46,16 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt,
 from websockets import Origin
 
 from ..buffer import MessageBuffer
+from ..constants import (
+    RETRY_ATTEMPTS_WS_CONNECT,
+    RETRY_ATTEMPTS_WS_SEND,
+    RETRY_BACKOFF_WS_CONNECT_MAX_SECONDS,
+    RETRY_BACKOFF_WS_CONNECT_MIN_SECONDS,
+    RETRY_BACKOFF_WS_CONNECT_MULTIPLIER,
+    RETRY_BACKOFF_WS_SEND_MAX_SECONDS,
+    RETRY_BACKOFF_WS_SEND_MIN_SECONDS,
+    RETRY_BACKOFF_WS_SEND_MULTIPLIER,
+)
 from ..log import logger
 from ..protocol import (
     encode_message,
@@ -55,6 +65,25 @@ from ..protocol import (
 from ..storage import StorageHandler
 from ..types import DanmuMessage, MessageType
 from .base import BaseCollector
+
+CHAT_FIELD_MAP: dict[MessageType, tuple[str, str]] = {
+    MessageType.DGB: ("送出了 {gfcnt}x 礼物{gfid}", "dgb"),
+    MessageType.UENTER: ("进入了直播间", "uenter"),
+    MessageType.ANBC: ("开通了{nl}级贵族", "anbc"),
+    MessageType.RNEWBC: ("续费了{nl}级贵族", "rnewbc"),
+    MessageType.BLAB: ("粉丝牌《{bnn}》升级至{bl}级", "blab"),
+    MessageType.UPGRADE: ("升级到{user_level}级", "upgrade"),
+}
+
+MSG_TYPE_TO_ENUM: dict[str, MessageType] = {
+    "chatmsg": MessageType.CHATMSG,
+    "dgb": MessageType.DGB,
+    "uenter": MessageType.UENTER,
+    "anbc": MessageType.ANBC,
+    "rnewbc": MessageType.RNEWBC,
+    "blab": MessageType.BLAB,
+    "upgrade": MessageType.UPGRADE,
+}
 
 
 class AsyncCollector(BaseCollector):
@@ -241,8 +270,12 @@ class AsyncCollector(BaseCollector):
     async def _connect_with_retry(self, url: str, ssl_context: ssl.SSLContext) -> Any:
         """Connect to a WebSocket endpoint with bounded retries."""
         retryer = AsyncRetrying(
-            stop=stop_after_attempt(3),
-            wait=wait_exponential(multiplier=0.5, min=0.5, max=5),
+            stop=stop_after_attempt(RETRY_ATTEMPTS_WS_CONNECT),
+            wait=wait_exponential(
+                multiplier=RETRY_BACKOFF_WS_CONNECT_MULTIPLIER,
+                min=RETRY_BACKOFF_WS_CONNECT_MIN_SECONDS,
+                max=RETRY_BACKOFF_WS_CONNECT_MAX_SECONDS,
+            ),
             retry=retry_if_exception_type(Exception),
             reraise=True,
         )
@@ -264,8 +297,12 @@ class AsyncCollector(BaseCollector):
             raise RuntimeError("WebSocket not connected")
 
         retryer = AsyncRetrying(
-            stop=stop_after_attempt(3),
-            wait=wait_exponential(multiplier=0.2, min=0.2, max=2),
+            stop=stop_after_attempt(RETRY_ATTEMPTS_WS_SEND),
+            wait=wait_exponential(
+                multiplier=RETRY_BACKOFF_WS_SEND_MULTIPLIER,
+                min=RETRY_BACKOFF_WS_SEND_MIN_SECONDS,
+                max=RETRY_BACKOFF_WS_SEND_MAX_SECONDS,
+            ),
             retry=retry_if_exception_type(Exception),
             reraise=True,
         )
@@ -304,98 +341,74 @@ class AsyncCollector(BaseCollector):
                 self._buffer.add_data(message_data)
                 for msg_dict in self._buffer.get_messages():
                     msg_type = msg_dict.get("type", "unknown")
-
-                    if msg_type == "loginres":
-                        logger.info("Received loginres - login successful")
-
-                    # Filter message types if --with specified (never filter protocol messages)
-                    if self._should_skip_message(msg_type):
-                        continue
-                    elif msg_type == "chatmsg":
-                        # Extract chat message fields
-                        nickname = re.sub(r"^\s+|\s+$", "", msg_dict.get("nn", "Unknown"))
-                        content = re.sub(r"^\s+|\s+$", "", msg_dict.get("txt", ""))
-                        level = msg_dict.get("level", "0")
-                        uid = msg_dict.get("uid", "0")
-
-                        # Print to console
-                        logger.info(f"[{nickname}] Lv{level}: {content}")
-
-                        # Construct DanmuMessage and persist via storage handler
-                        try:
-                            danmu_message = DanmuMessage(
-                                timestamp=datetime.now(),
-                                username=nickname,
-                                content=content,
-                                user_level=int(level) if level.isdigit() else 0,
-                                user_id=uid,
-                                room_id=str(self._real_room_id),
-                                msg_type=MessageType.CHATMSG,
-                                raw_data=msg_dict,
-                            )
-                            await self.storage.save(danmu_message)
-                        except Exception as e:
-                            logger.error(f"Failed to save danmu message: {e}")
-                    elif msg_type == "dgb":  # Gift
-                        danmu_message = self._build_danmu_message(msg_dict, MessageType.DGB)
-                        gfcnt = msg_dict.get("gfcnt", "1")
-                        gfid = msg_dict.get("gfid", "unknown")
-                        logger.info(f"[{danmu_message.username}] 送出了 {gfcnt}x 礼物{gfid}")
-                        try:
-                            await self.storage.save(danmu_message)
-                        except Exception as e:
-                            logger.error(f"Failed to save dgb message: {e}")
-
-                    elif msg_type == "uenter":  # User enter
-                        danmu_message = self._build_danmu_message(msg_dict, MessageType.UENTER)
-                        logger.info(f"[{danmu_message.username}] 进入了直播间")
-                        try:
-                            await self.storage.save(danmu_message)
-                        except Exception as e:
-                            logger.error(f"Failed to save uenter message: {e}")
-
-                    elif msg_type == "anbc":  # Open noble
-                        danmu_message = self._build_danmu_message(msg_dict, MessageType.ANBC)
-                        nl = msg_dict.get("nl", "?")
-                        logger.info(f"[{danmu_message.username}] 开通了{nl}级贵族")
-                        try:
-                            await self.storage.save(danmu_message)
-                        except Exception as e:
-                            logger.error(f"Failed to save anbc message: {e}")
-
-                    elif msg_type == "rnewbc":  # Renew noble
-                        danmu_message = self._build_danmu_message(msg_dict, MessageType.RNEWBC)
-                        nl = msg_dict.get("nl", "?")
-                        logger.info(f"[{danmu_message.username}] 续费了{nl}级贵族")
-                        try:
-                            await self.storage.save(danmu_message)
-                        except Exception as e:
-                            logger.error(f"Failed to save rnewbc message: {e}")
-
-                    elif msg_type == "blab":  # Fan badge level up
-                        danmu_message = self._build_danmu_message(msg_dict, MessageType.BLAB)
-                        bl = msg_dict.get("bl", "?")
-                        bnn = msg_dict.get("bnn", "粉丝牌")
-                        logger.info(f"[{danmu_message.username}] 粉丝牌《{bnn}》升级至{bl}级")
-                        try:
-                            await self.storage.save(danmu_message)
-                        except Exception as e:
-                            logger.error(f"Failed to save blab message: {e}")
-
-                    elif msg_type == "upgrade":  # User level up
-                        danmu_message = self._build_danmu_message(msg_dict, MessageType.UPGRADE)
-                        logger.info(
-                            f"[{danmu_message.username}] 升级到{danmu_message.user_level}级"
-                        )
-                        try:
-                            await self.storage.save(danmu_message)
-                        except Exception as e:
-                            logger.error(f"Failed to save upgrade message: {e}")
-
-                    else:
-                        # Log other message types in debug mode
-                        logger.debug(f"Received message type: {msg_type}")
+                    await self._handle_message(msg_type, msg_dict)
 
         except asyncio.CancelledError:
             logger.debug("Message processing cancelled")
             raise
+
+    async def _handle_message(self, msg_type: str, msg_dict: dict[str, str]) -> None:
+        if msg_type == "loginres":
+            logger.info("Received loginres - login successful")
+
+        if self._should_skip_message(msg_type):
+            return
+
+        if msg_type == "chatmsg":
+            await self._handle_chat_message(msg_dict)
+            return
+
+        enum_value = MSG_TYPE_TO_ENUM.get(msg_type)
+        if enum_value is None or enum_value == MessageType.CHATMSG:
+            logger.debug(f"Received message type: {msg_type}")
+            return
+
+        await self._handle_structured_message(msg_dict, enum_value)
+
+    async def _handle_chat_message(self, msg_dict: dict[str, str]) -> None:
+        nickname = re.sub(r"^\s+|\s+$", "", msg_dict.get("nn", "Unknown"))
+        content = re.sub(r"^\s+|\s+$", "", msg_dict.get("txt", ""))
+        level = msg_dict.get("level", "0")
+        uid = msg_dict.get("uid", "0")
+
+        logger.info(f"[{nickname}] Lv{level}: {content}")
+
+        try:
+            danmu_message = DanmuMessage(
+                timestamp=datetime.now(),
+                username=nickname,
+                content=content,
+                user_level=int(level) if level.isdigit() else 0,
+                user_id=uid,
+                room_id=str(self._real_room_id),
+                msg_type=MessageType.CHATMSG,
+                raw_data=msg_dict,
+            )
+            await self.storage.save(danmu_message)
+        except Exception as e:
+            logger.error(f"Failed to save danmu message: {e}")
+
+    async def _handle_structured_message(
+        self, msg_dict: dict[str, str], msg_type: MessageType
+    ) -> None:
+        danmu_message = self._build_danmu_message(msg_dict, msg_type)
+        template_and_label = CHAT_FIELD_MAP.get(msg_type)
+        if template_and_label is None:
+            logger.debug(f"Received message type: {msg_type.value}")
+            return
+
+        template, label = template_and_label
+        context = {
+            "gfcnt": msg_dict.get("gfcnt", "1"),
+            "gfid": msg_dict.get("gfid", "unknown"),
+            "nl": msg_dict.get("nl", "?"),
+            "bnn": msg_dict.get("bnn", "粉丝牌"),
+            "bl": msg_dict.get("bl", "?"),
+            "user_level": str(danmu_message.user_level),
+        }
+        logger.info(f"[{danmu_message.username}] {template.format(**context)}")
+
+        try:
+            await self.storage.save(danmu_message)
+        except Exception as e:
+            logger.error(f"Failed to save {label} message: {e}")

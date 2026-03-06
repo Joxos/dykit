@@ -225,8 +225,7 @@ class PostgreSQLStorage(StorageHandler):
                 await cursor.execute(create_table_query)
             await self.connection.commit()
         except psycopg.Error:
-            if self.connection is not None:
-                await self.connection.rollback()
+            await self.connection.rollback()
             raise
 
     async def save(self, message: DanmuMessage) -> None:
@@ -289,8 +288,7 @@ class PostgreSQLStorage(StorageHandler):
                 )
             await self.connection.commit()
         except psycopg.Error:
-            if self.connection is not None:
-                await self.connection.rollback()
+            await self.connection.rollback()
             raise
 
     async def close(self) -> None:

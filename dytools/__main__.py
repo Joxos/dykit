@@ -80,6 +80,23 @@ def _resolve_room_for_query(room: str) -> str:
         return room
 
 
+def _to_str(value: object, default: str) -> str:
+    if isinstance(value, str):
+        return value
+    return default
+
+
+def _to_int(value: object, default: int) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
+
 @click.group()
 @click.option(
     "--dsn",
@@ -156,13 +173,13 @@ def collect(
             conn_params = psycopg_conninfo.conninfo_to_dict(dsn)
             storage = await PostgreSQLStorage.create(
                 room_id=room,
-                host=conn_params.get("host", "localhost"),
-                port=int(conn_params.get("port", 5432)),
-                database=conn_params.get(
-                    "dbname", ""
+                host=_to_str(conn_params.get("host"), "localhost"),
+                port=_to_int(conn_params.get("port"), 5432),
+                database=_to_str(
+                    conn_params.get("dbname"), ""
                 ),  # Note: DSN has 'dbname', psycopg expects 'database'
-                user=conn_params.get("user", ""),
-                password=conn_params.get("password", ""),
+                user=_to_str(conn_params.get("user"), ""),
+                password=_to_str(conn_params.get("password"), ""),
             )
             async with storage:
                 collector = AsyncCollector(

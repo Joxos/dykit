@@ -31,13 +31,15 @@ import sys
 
 import psycopg
 
+DOC_TEXT = __doc__ or ""
+
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description="Migrate room_id from SHORT:REAL format to REAL only",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__.split("Usage:")[1] if "Usage:" in __doc__ else "",
+        epilog=DOC_TEXT.split("Usage:", 1)[1] if "Usage:" in DOC_TEXT else "",
     )
     parser.add_argument(
         "--dsn",

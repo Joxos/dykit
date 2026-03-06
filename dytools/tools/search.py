@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 import psycopg
+from psycopg import sql
 
 
 def search(
@@ -55,57 +56,61 @@ def search(
     with psycopg.connect(dsn) as conn:
         with conn.cursor() as cur:
             # Build dynamic WHERE clause
-            where_clauses = ["room_id = %s"]
+            where_clauses: list[sql.SQL] = [sql.SQL("room_id = %s")]
             params: list[Any] = [room_id]
 
             # Keyword search with ILIKE (case-insensitive)
             if query is not None:
-                where_clauses.append("content ILIKE %s")
+                where_clauses.append(sql.SQL("content ILIKE %s"))
                 params.append(f"%{query}%")
 
             # Username filter
             if username is not None:
-                where_clauses.append("username = %s")
+                where_clauses.append(sql.SQL("username = %s"))
                 params.append(username)
 
             # User ID filter
             if user_id is not None:
-                where_clauses.append("user_id = %s")
+                where_clauses.append(sql.SQL("user_id = %s"))
                 params.append(user_id)
 
             # Message type filter
             if msg_type is not None:
-                where_clauses.append("msg_type = %s")
+                where_clauses.append(sql.SQL("msg_type = %s"))
                 params.append(msg_type)
 
             # Date range filters
             if from_date is not None:
-                where_clauses.append("timestamp >= %s::timestamp")
+                where_clauses.append(sql.SQL("timestamp >= %s::timestamp"))
                 params.append(from_date)
 
             if to_date is not None:
-                where_clauses.append("timestamp <= %s::timestamp + INTERVAL '1 day'")
+                where_clauses.append(sql.SQL("timestamp <= %s::timestamp + INTERVAL '1 day'"))
                 params.append(to_date)
 
             # Build final query with appropriate ordering
-            where_clause = " AND ".join(where_clauses)
+            where_clause = sql.SQL(" AND ").join(where_clauses)
             if last is not None:
-                query_sql = f"""
+                query_sql = sql.SQL(
+                    """
                     SELECT timestamp, username, content, user_level, user_id, room_id, msg_type
                     FROM danmaku
                     WHERE {where_clause}
                     ORDER BY timestamp DESC
                     LIMIT %s
-                """
+                    """
+                ).format(where_clause=where_clause)
                 params.append(last)
             else:  # first is not None
-                query_sql = f"""
+                query_sql = sql.SQL(
+                    """
                     SELECT timestamp, username, content, user_level, user_id, room_id, msg_type
                     FROM danmaku
                     WHERE {where_clause}
                     ORDER BY timestamp ASC
                     LIMIT %s
-                """
+                    """
+                ).format(where_clause=where_clause)
                 params.append(first)
 
             cur.execute(query_sql, params)

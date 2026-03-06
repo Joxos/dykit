@@ -31,6 +31,14 @@ from bs4 import BeautifulSoup
 from construct import Int8ul, Int16ul, Int32ul
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
+from .constants import (
+    MAX_PACKET_SIZE,
+    MIN_PACKET_SIZE,
+    RETRY_ATTEMPTS_HTTP,
+    RETRY_BACKOFF_HTTP_MAX_SECONDS,
+    RETRY_BACKOFF_HTTP_MIN_SECONDS,
+    RETRY_BACKOFF_HTTP_MULTIPLIER,
+)
 from .log import logger
 
 # Douyu WebSocket server URL (use wss:// port 8506)
@@ -119,8 +127,12 @@ def _build_int8(value: int) -> bytes:
 
 @retry(
     retry=retry_if_exception_type(httpx.HTTPError),
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=0.5, min=0.5, max=3),
+    stop=stop_after_attempt(RETRY_ATTEMPTS_HTTP),
+    wait=wait_exponential(
+        multiplier=RETRY_BACKOFF_HTTP_MULTIPLIER,
+        min=RETRY_BACKOFF_HTTP_MIN_SECONDS,
+        max=RETRY_BACKOFF_HTTP_MAX_SECONDS,
+    ),
     reraise=True,
 )
 def _http_get_with_retry(url: str, headers: dict[str, str], timeout: float) -> httpx.Response:
@@ -268,6 +280,9 @@ def decode_message(data: bytes) -> str | None:
         return None
 
     total_size = packet_length + 4
+    if total_size < MIN_PACKET_SIZE or total_size > MAX_PACKET_SIZE:
+        return None
+
     if len(data) < total_size:
         return None
 
