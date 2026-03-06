@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
+from ..constants import PROTOCOL_MESSAGE_TYPES
 from ..storage.base import StorageHandler
 from ..types import DanmuMessage, MessageType
 
@@ -32,10 +33,10 @@ class BaseCollector:
             ws_url: Optional manual WebSocket URL override. If provided, bypasses
                 discovery and uses this URL directly.
             type_filter: Optional list of message types to collect (e.g., ['chatmsg', 'dgb']).
-                If None, all message types are collected. Protocol messages (loginres, mrkl)
+            If None, all message types are collected. Protocol messages (see PROTOCOL_MESSAGE_TYPES)
                 are never filtered.
             type_exclude: Optional list of message types to exclude from collection.
-                If None, no messages are excluded. Protocol messages (loginres, mrkl) are
+                If None, no messages are excluded. Protocol messages (see PROTOCOL_MESSAGE_TYPES) are
                 never excluded.
         """
         self.room_id = room_id
@@ -55,7 +56,7 @@ class BaseCollector:
             True if the message should be skipped, False otherwise.
         """
         # Never filter protocol messages
-        if msg_type_str in ("loginres", "mrkl"):
+        if msg_type_str in PROTOCOL_MESSAGE_TYPES:
             return False
 
         # Check type filter (whitelist)

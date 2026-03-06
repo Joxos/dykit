@@ -47,13 +47,9 @@ from __future__ import annotations
 
 import struct
 
+from .constants import MAX_PACKET_SIZE, MIN_PACKET_SIZE
 from .log import logger
 from .protocol import deserialize_message
-
-# Minimum packet size: 4+4+2+1+1 (header) + 1 (null terminator) = 13 bytes
-MIN_PACKET_SIZE = 13
-# Maximum packet size to prevent OOM on malformed packets
-MAX_PACKET_SIZE = 65536
 
 
 class MessageBuffer:
