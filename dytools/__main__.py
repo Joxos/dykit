@@ -57,23 +57,23 @@ from dytools.tools import cluster, prune, rank, search
 
 
 def _resolve_room_for_query(room: str) -> str:
-    """Resolve a room ID to composite format for database queries.
+    """Resolve a room ID to real room ID for database queries.
 
     Args:
         room: Room ID from CLI (could be short ID like '6657').
 
     Returns:
-        Composite format 'short:real' (e.g., '6657:6979222').
-        Falls back to 'room:room' if resolution fails.
+        Real room ID as string (e.g., '6979222').
+        Falls back to input value if resolution fails.
     """
     from dytools.protocol import resolve_room_id
 
     try:
         real_id = resolve_room_id(int(room))
-        return f"{room}:{real_id}"
+        return str(real_id)
     except Exception:
         logger.warning(f"Could not resolve room {room}, using as-is")
-        return f"{room}:{room}"
+        return room
 
 
 @click.group()
