@@ -316,8 +316,8 @@ class AsyncCollector(BaseCollector):
                         logger.info("Received loginres - login successful")
 
                     # Filter message types if --with specified (never filter protocol messages)
-<<<<<<< HEAD
                     if self._should_skip_message(msg_type):
+                        continue
                     elif msg_type == "chatmsg":
                         # Extract chat message fields
                         nickname = re.sub(r'^\s+|\s+$', '', msg_dict.get("nn", "Unknown"))
