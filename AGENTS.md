@@ -1,16 +1,15 @@
 # AGENTS.md — dytools Repository Guide
 
 > For AI coding agents operating in this repository.
-> See also: `HOW_TO.md` for human-AI collaboration norms.
+> See also: `.ai/HOW_TO.md` for human-AI collaboration norms (private, not version-controlled).
 
 ---
 
 ## Project Overview
 
-**dytools** is a Python library and CLI tool for collecting and analyzing Douyu live stream danmu (弹幕/chat) messages. It uses PostgreSQL as the primary storage backend with async WebSocket-based collection.
+**dytools** is a Python library and CLI tool for collecting and analyzing Douyu live stream danmu (弹幕/chat) messages. PostgreSQL is the primary storage backend; async WebSocket-based collection.
 
-- **Version**: 4.0.0 (post-MVP)
-- **Python**: ≥3.9 (runtime), 3.12 in `.venv`
+- **Version**: 4.0.0 (post-MVP) | **Python**: ≥3.9 (runtime), 3.12 in `.venv`
 - **Entry point**: `dytools` CLI → `dytools/__main__.py`
 
 ---
@@ -20,35 +19,22 @@
 All tools are managed via `uv`. **Never touch global pip.**
 
 ```bash
-# Environment setup
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 
-# Format code
-uv run ruff format .
+uv run ruff format .          # Format code
+uv run ruff check .           # Lint (includes import sorting via isort rules)
+uv run ruff check --fix .     # Lint + auto-fix
+uv run basedpyright           # Type checking (strict mode)
 
-# Lint (includes import sorting via isort rules)
-uv run ruff check .
-uv run ruff check --fix .
+uv run pytest                                                # Run all tests
+uv run pytest tests/test_protocol.py                        # Run single test file
+uv run pytest tests/test_protocol.py::test_encode_message   # Run single test by name
 
-# Type checking
-uv run basedpyright
-
-# Run all tests
-uv run pytest
-
-# Run a single test file
-uv run pytest tests/test_protocol.py
-
-# Run a single test by name
-uv run pytest tests/test_protocol.py::test_encode_message
-
-# Install the CLI locally
-uv pip install -e .
-dytools --help
+uv pip install -e . && dytools --help  # Install and verify CLI
 ```
 
-> **Note**: There are currently no project-owned tests (pre-MVP convention from HOW_TO.md). Do not write tests unless explicitly requested.
+> **Note**: No project-owned tests exist (post-MVP convention). Do not write tests unless explicitly requested.
 
 ---
 
@@ -59,15 +45,15 @@ dytools/
 ├── __main__.py          # Click CLI entry point (7 subcommands)
 ├── __init__.py          # Public API surface / __all__
 ├── types.py             # DanmuMessage dataclass, MessageType enum
-├── protocol.py          # Binary encode/decode, KV serialization
+├── protocol.py          # Binary encode/decode, KV serialization, room ID resolution
 ├── buffer.py            # UTF-8 safe buffering for WebSocket frames
 ├── log.py               # Loguru logger configuration
 ├── collectors/
-│   ├── async_.py        # AsyncCollector (primary)
-│   └── sync.py          # SyncCollector
+│   ├── base.py          # BaseCollector ABC
+│   └── async_.py        # AsyncCollector (primary)
 ├── storage/
-│   ├── base.py          # StorageHandler ABC
-│   ├── postgres.py      # PostgreSQLStorage (primary backend)
+│   ├── base.py          # StorageHandler ABC (async context manager)
+│   ├── postgres.py      # PostgreSQLStorage — use factory: await PostgreSQLStorage.create(...)
 │   └── csv.py           # CSVStorage + ConsoleStorage
 └── tools/
     ├── rank.py          # User/content frequency ranking
@@ -90,16 +76,13 @@ dytools/
 
 ### Imports
 
-Always include `from __future__ import annotations` as the **first non-docstring line**. This enables PEP 563 postponed evaluation of annotations for Python 3.9 compat.
+Always include `from __future__ import annotations` as the **first non-docstring line** (PEP 563 postponed evaluation for Python 3.9 compat).
 
 Import order (ruff `I` rules enforce this automatically):
 1. `from __future__ import annotations`
-2. Blank line
-3. Standard library imports
-4. Blank line
-5. Third-party imports
-6. Blank line
-7. Local/relative imports
+2. Standard library imports
+3. Third-party imports
+4. Local/relative imports
 
 ```python
 from __future__ import annotations
@@ -118,19 +101,17 @@ from dytools.storage import PostgreSQLStorage
 ### Type Annotations
 
 - Use **built-in generics** (PEP 585): `list[str]`, `dict[str, int]`, `tuple[int, ...]`
-- Use **union syntax** (PEP 604): `str | None`, `int | str`, NOT `Optional[X]` or `Union[X, Y]`
-- Exception: `Optional` from `typing` is used in `types.py` for optional dataclass fields — acceptable for dataclass defaults, but prefer `X | None` in function signatures
+- Use **union syntax** (PEP 604): `str | None`, NOT `Optional[X]` or `Union[X, Y]`
+- Exception: `Optional` from `typing` is acceptable for dataclass field defaults (see `types.py`)
 - `basedpyright` in `strict` mode is enforced — no untyped code
 - Do not suppress type errors with `cast`, `# type: ignore`, or `Any` as a shortcut
 
 ```python
 # Correct
-def process(msg: DanmuMessage, room: str | None = None) -> dict[str, str | int | None]:
-    ...
+def process(msg: DanmuMessage, room: str | None = None) -> dict[str, str | int | None]: ...
 
 # Wrong
-def process(msg: DanmuMessage, room: Optional[str] = None) -> Dict[str, Any]:
-    ...
+def process(msg: DanmuMessage, room: Optional[str] = None) -> Dict[str, Any]: ...
 ```
 
 ### Naming Conventions
@@ -147,7 +128,7 @@ def process(msg: DanmuMessage, room: Optional[str] = None) -> Dict[str, Any]:
 
 ### Docstrings
 
-Use **Google Style** docstrings. Write docstrings for all classes and functions. Skip module docstrings that add no information. Do **not** write trivially redundant docstrings like `"""Tests for foo."""`.
+Use **Google Style** docstrings for all public classes and functions. Skip module docstrings that add no information. Do **not** write trivially redundant docstrings like `"""Tests for foo."""`.  
 
 ```python
 def rank(dsn: str, room: str, top: int, mode: str = "user") -> list[dict[str, Any]]:
@@ -160,9 +141,7 @@ def rank(dsn: str, room: str, top: int, mode: str = "user") -> list[dict[str, An
         mode: Either "user" or "content".
 
     Returns:
-        List of dicts with ranking data. User mode returns keys
-        ``username`` and ``count``; content mode adds ``first_seen``
-        and ``last_seen``.
+        List of dicts with ranking data.
 
     Raises:
         psycopg.Error: On database query failure.
@@ -173,7 +152,7 @@ def rank(dsn: str, room: str, top: int, mode: str = "user") -> list[dict[str, An
 
 - Catch specific exceptions — never bare `except:` or `except Exception` without re-raising or logging
 - CLI commands catch `psycopg.Error` explicitly and call `sys.exit(1)`
-- Use `logger.error(...)` from `dytools.log` for logging errors; pass `exc_info=True` (or `exc_info=verbose`) for debug context
+- Use `logger.error(...)` from `dytools.log`; pass `exc_info=True` for debug context
 - Never swallow exceptions silently with empty `except` blocks
 
 ```python
@@ -184,32 +163,30 @@ except psycopg.Error as e:
     sys.exit(1)
 ```
 
-### Dataclasses and Enums
+### Dataclasses, Enums, and Async Patterns
 
 - Prefer **frozen dataclasses** (`@dataclass(frozen=True)`) for value objects
 - Use `Enum` for protocol message types — never raw string literals in logic
 - `DanmuMessage` is the canonical data transfer object; use it across all layers
-
-### Async Patterns
-
 - Use `asyncio.run(...)` at the top-level CLI entry point
-- Collectors expose `async def connect()` / `async def stop()`
-- Storage handlers are synchronous (psycopg3 blocking API); do not mix async storage calls
+- `PostgreSQLStorage` requires the async factory: `storage = await PostgreSQLStorage.create(...)`
+- `StorageHandler` subclasses support `async with` for automatic resource cleanup
+- Storage handlers use async psycopg3 (`AsyncConnection`) — do not use blocking psycopg calls
 
 ---
 
 ## Database Conventions
 
-- Table: `danmaku` with 14 data columns (see README for schema)
+- Table: `danmaku` with 14 data columns + `id` + `raw_data JSONB` (see README for full schema)
 - Always use parameterized queries: `cur.execute(query, [param1, param2])`
-- Use `psycopg` (psycopg3), not `psycopg2`
+- Use `psycopg` (psycopg3, `AsyncConnection`), not `psycopg2`
 - DSN passed via `--dsn` CLI flag or `DYTOOLS_DSN` env var
 
 ---
 
 ## Git / Commit Conventions
 
-Follow **Conventional Commits** (see HOW_TO.md):
+Follow **Conventional Commits**:
 
 ```
 feat: add search subcommand with flexible filtering
@@ -224,12 +201,13 @@ chore: update ruff to 0.3.0
 
 ---
 
-## Key Rules from HOW_TO.md
+## Key Rules from `.ai/HOW_TO.md`
 
-- Sync AGENTS.md whenever code structure changes significantly
-- No magic literals — use enums
-- All code comments in English
+- **Sync AGENTS.md** whenever code structure changes significantly
+- **`.ai/` folder is private** — never include its contents in version control
+- No magic literals — use enums; all code comments in English
 - Avoid reinventing the wheel — check stdlib and existing dependencies first
 - Maintain docstrings and README in sync with implementation changes
 - Tasks should be small and targeted (one commit's worth of change)
 - Always provide a summary report after completing a task and ask for next steps
+- Before answering questions about project internals, **search the code first** — never guess
