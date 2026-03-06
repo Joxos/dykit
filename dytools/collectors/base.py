@@ -84,7 +84,7 @@ class BaseCollector:
         if nn:
             nn = re.sub(r"^\s+|\s+$", "", nn)
 
-        room_id = f"{self.room_id}:{self._real_room_id}"
+        room_id = str(self._real_room_id)
         level = msg_dict.get("level", "0")
 
         # Extract content only for CHATMSG

@@ -337,7 +337,7 @@ class AsyncCollector(BaseCollector):
                                 content=content,
                                 user_level=int(level) if level.isdigit() else 0,
                                 user_id=uid,
-                                room_id=f"{self.room_id}:{self._real_room_id}",
+                                room_id=str(self._real_room_id),
                                 msg_type=MessageType.CHATMSG,
                                 raw_data=msg_dict,
                             )
