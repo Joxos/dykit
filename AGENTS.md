@@ -11,6 +11,7 @@
 
 - **Version**: 4.0.0 (post-MVP) | **Python**: ≥3.9 (runtime), 3.12 in `.venv`
 - **Entry point**: `dytools` CLI → `dytools/__main__.py`
+- **No tests exist** (post-MVP convention). Do not write tests unless explicitly requested.
 
 ---
 
@@ -25,16 +26,14 @@ uv pip install -e ".[dev]"
 uv run ruff format .          # Format code
 uv run ruff check .           # Lint (includes import sorting via isort rules)
 uv run ruff check --fix .     # Lint + auto-fix
-uv run basedpyright           # Type checking (strict mode)
+uv run basedpyright           # Type checking (strict mode; installed as 'pyright' in dev deps but invoked as 'basedpyright')
 
-uv run pytest                                                # Run all tests
+uv run pytest                                                # Run all tests (none exist yet)
 uv run pytest tests/test_protocol.py                        # Run single test file
 uv run pytest tests/test_protocol.py::test_encode_message   # Run single test by name
 
 uv pip install -e . && dytools --help  # Install and verify CLI
 ```
-
-> **Note**: No project-owned tests exist (post-MVP convention). Do not write tests unless explicitly requested.
 
 ---
 
@@ -42,28 +41,31 @@ uv pip install -e . && dytools --help  # Install and verify CLI
 
 ```
 dytools/
-├── __main__.py          # Click CLI entry point (7 subcommands)
+├── __main__.py          # Click CLI entry point (collect, rank, prune, cluster, import, export, init-db, search + service group)
 ├── __init__.py          # Public API surface / __all__
 ├── types.py             # DanmuMessage dataclass, MessageType enum
-├── protocol.py          # Binary encode/decode, KV serialization, room ID resolution
+├── constants.py         # Shared constants: MIN/MAX_PACKET_SIZE, PROTOCOL_MESSAGE_TYPES, USER_FILTERABLE_TYPES
+├── protocol.py          # Binary encode/decode, KV serialization, room ID resolution (uses httpx + bs4)
 ├── buffer.py            # UTF-8 safe buffering for WebSocket frames
 ├── log.py               # Loguru logger configuration
 ├── collectors/
 │   ├── base.py          # BaseCollector ABC
-│   └── async_.py        # AsyncCollector (primary)
+│   └── async_.py        # AsyncCollector (primary); heartbeat every 45s via asyncio.Task
 ├── storage/
 │   ├── base.py          # StorageHandler ABC (async context manager)
 │   ├── postgres.py      # PostgreSQLStorage — use factory: await PostgreSQLStorage.create(...)
 │   └── csv.py           # CSVStorage + ConsoleStorage
 ├── service/
 │   ├── __init__.py      # Exports ServiceManager
-│   ├── manager.py       # ServiceManager class for systemd operations
+│   ├── manager.py       # ServiceManager for systemd --user operations (create/start/stop/remove/logs/status/where/edit)
 │   └── templates.py     # Systemd unit file templates
 └── tools/
     ├── rank.py          # User/content frequency ranking
     ├── prune.py         # Duplicate removal
     ├── cluster.py       # Text similarity clustering
-    └── search.py        # Flexible message search
+    └── search.py        # Flexible message search (ILIKE, date range, user filters)
+
+scripts/                 # Maintenance scripts (zsh/python); not part of the library
 ```
 
 ---
@@ -72,15 +74,15 @@ dytools/
 
 ### General
 
-- **Line length**: 100 characters (`ruff` enforced, E501 ignored)
+- **Line length**: 100 characters (`ruff` enforced, `E501` ignored in lint)
 - **Target Python**: 3.9 (`pyproject.toml` `target-version`)
-- **Code comments**: Always in **English**. Full sentences on their own line (capitalized). Inline/incomplete phrases use end-of-line comments (lowercase).
+- **Code comments**: Always in **English**. Full sentences on their own line (capitalized, not end-of-line). Incomplete inline phrases go on end-of-line (lowercase).
 - **Magic literals**: Avoid. Use `Enum` or named constants instead.
 - **No backward compatibility**: Do not add compatibility shims or deprecated aliases.
 
 ### Imports
 
-Always include `from __future__ import annotations` as the **first non-docstring line** (PEP 563 postponed evaluation for Python 3.9 compat).
+Always include `from __future__ import annotations` as the **first non-docstring line** in every module (PEP 563 postponed evaluation for Python 3.9 compat).
 
 Import order (ruff `I` rules enforce this automatically):
 1. `from __future__ import annotations`
@@ -106,9 +108,10 @@ from dytools.storage import PostgreSQLStorage
 
 - Use **built-in generics** (PEP 585): `list[str]`, `dict[str, int]`, `tuple[int, ...]`
 - Use **union syntax** (PEP 604): `str | None`, NOT `Optional[X]` or `Union[X, Y]`
-- Exception: `Optional` from `typing` is acceptable for dataclass field defaults (see `types.py`)
+- Exception: `Optional` from `typing` is acceptable for dataclass field defaults with `None` (see `types.py`)
 - `basedpyright` in `strict` mode is enforced — no untyped code
 - Do not suppress type errors with `cast`, `# type: ignore`, or `Any` as a shortcut
+- psycopg3 stubs are incomplete; `reportUnknownMemberType/VariableType/ArgumentType` are downgraded to warnings in `pyproject.toml`
 
 ```python
 # Correct
@@ -132,7 +135,7 @@ def process(msg: DanmuMessage, room: Optional[str] = None) -> Dict[str, Any]: ..
 
 ### Docstrings
 
-Use **Google Style** docstrings for all public classes and functions. Skip module docstrings that add no information. Do **not** write trivially redundant docstrings like `"""Tests for foo."""`.  
+Use **Google Style** docstrings for all public classes and functions. Skip module docstrings that add no information. Do **not** write trivially redundant docstrings like `"""Tests for foo."""`.
 
 ```python
 def rank(dsn: str, room: str, top: int, mode: str = "user") -> list[dict[str, Any]]:
@@ -176,34 +179,37 @@ except psycopg.Error as e:
 - `PostgreSQLStorage` requires the async factory: `storage = await PostgreSQLStorage.create(...)`
 - `StorageHandler` subclasses support `async with` for automatic resource cleanup
 - Storage handlers use async psycopg3 (`AsyncConnection`) — do not use blocking psycopg calls
+- `psycopg` uses `dbname` (not `database`) as the kwarg for `AsyncConnection.connect()`
+
 ### Subprocess Patterns
 
-When executing external commands (like `systemctl` or `journalctl`), follow these security and reliability rules:
+When executing external commands (like `systemctl` or `journalctl`):
 
-- **Never use `shell=True`**: Always pass arguments as a list to prevent shell injection.
-- **Capture output**: Use `capture_output=True` and `text=True` for easier processing.
-- **Manual error handling**: Set `check=False` and explicitly inspect `returncode` and `stderr` to provide context-rich error messages.
+- **Never use `shell=True`**: Always pass arguments as a list.
+- **Capture output**: Use `capture_output=True` and `text=True`.
+- **Manual error handling**: Set `check=False` and inspect `returncode` / `stderr` for context-rich errors.
 
 ```python
 def _systemctl(self, args: list[str]) -> subprocess.CompletedProcess[str]:
-    # Security: List form only, NEVER shell=True
+    # Security: list form only, NEVER shell=True
     return subprocess.run(
-        ["systemctl", "--user"] + args, 
-        capture_output=True, 
-        text=True, 
-        check=False
+        ["systemctl", "--user"] + args,
+        capture_output=True,
+        text=True,
+        check=False,
     )
 ```
-
 
 ---
 
 ## Database Conventions
 
-- Table: `danmaku` with 14 data columns + `id` + `raw_data JSONB` (see README for full schema)
+- Table: `danmaku` with 14 data columns + `id SERIAL PRIMARY KEY` + `raw_data JSONB`
+- Indexes: `idx_danmaku_room_time`, `idx_danmaku_user_id`, `idx_danmaku_msg_type`
 - Always use parameterized queries: `cur.execute(query, [param1, param2])`
 - Use `psycopg` (psycopg3, `AsyncConnection`), not `psycopg2`
 - DSN passed via `--dsn` CLI flag or `DYTOOLS_DSN` env var
+- Use `Jsonb(...)` from `psycopg.types.json` when inserting JSONB values
 
 ---
 
@@ -234,3 +240,4 @@ chore: update ruff to 0.3.0
 - Tasks should be small and targeted (one commit's worth of change)
 - Always provide a summary report after completing a task and ask for next steps
 - Before answering questions about project internals, **search the code first** — never guess
+- If from requirements to implementation there are multiple valid approaches, present them and let the user choose
