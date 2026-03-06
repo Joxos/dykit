@@ -187,7 +187,12 @@ def collect(
 @cli.command()
 @click.option("-r", "--room", required=True, help="Room ID")
 @click.option("--top", default=10, help="Top N results (default: 10)")
-@click.option("--type", "msg_type", default="chatmsg", help="Message type (default: chatmsg)")
+@click.option(
+    "--type",
+    "msg_type",
+    default="chatmsg",
+    help="Message type (chatmsg, dgb, uenter, loginres, loginreq, joingroup, mrkl, anbc, rnewbc, blab, upgrade, unknown; default: chatmsg)",
+)
 @click.option("--days", type=int, help="Days to look back (default: all time)")
 @click.option("-u", "--user", is_flag=True, help="Rank by username (default)")
 @click.option("-c", "--content", "content_mode", is_flag=True, help="Rank by message content")
@@ -404,7 +409,11 @@ def cluster_cmd(
 @click.option("-q", "--query", help="Keyword to search (case-insensitive)")
 @click.option("-u", "--user", help="Filter by username")
 @click.option("--user-id", help="Filter by user_id")
-@click.option("--type", "msg_type", help="Filter by message type")
+@click.option(
+    "--type",
+    "msg_type",
+    help="Filter by message type (chatmsg, loginres, loginreq, joingroup, mrkl, dgb, uenter, anbc, rnewbc, blab, upgrade, unknown)",
+)
 @click.option("--from", "from_date", help="Start date (YYYY-MM-DD)")
 @click.option("--to", "to_date", help="End date (YYYY-MM-DD)")
 @click.option("--last", type=int, help="Show last (most recent) N messages")
@@ -870,7 +879,9 @@ def status_service(service_name: str) -> None:
 
 @service.command(name="logs")
 @click.argument("service_name")
-@click.option("-n", "--lines", type=int, default=50, help="Number of log lines to show (default: 50)")
+@click.option(
+    "-n", "--lines", type=int, default=50, help="Number of log lines to show (default: 50)"
+)
 def logs_service(service_name: str, lines: int) -> None:
     """Show recent log output from a service.
 

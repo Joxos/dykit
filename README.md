@@ -59,6 +59,44 @@ dytools collect -r 6657
 dytools rank -r 6657 --top 20
 ```
 
+## Service Management
+
+### Managing Long-Running Collectors
+`dytools` supports managing long-running collectors as `systemd --user` services. This allows background collection that persists across sessions and restarts automatically.
+
+### Basic Workflow
+```bash
+# Set your database DSN (required for the service to connect)
+export DYTOOLS_DSN="postgresql://douyu:douyu6657@localhost:5432/douyu_danmu"
+
+# Create a service for a specific room (Format: NAME:ROOM_ID)
+dytools service create test-room:9999
+
+# List all managed services
+dytools service list
+
+# Check status of a specific service
+dytools service status test-room-9999
+
+# View recent logs
+dytools service logs test-room-9999 --lines 10
+
+# Stop a running service
+dytools service stop test-room-9999
+
+# Get the path to the unit file
+dytools service where test-room-9999
+
+# Remove the service completely
+dytools service remove test-room-9999
+```
+
+### Important Notes
+- **Persistence**: To ensure services keep running after you log out, run `loginctl enable-linger $USER`.
+- **Storage**: Service unit files are stored in `~/.config/systemd/user/`.
+- **Naming**: When creating a service with `NAME:ROOM_ID`, the resulting systemd unit is named `dytools-NAME-ROOM_ID.service`. Use the `NAME-ROOM_ID` part with `dytools service` commands.
+
+
 ---
 
 ## 命令行参考

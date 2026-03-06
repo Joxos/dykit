@@ -55,6 +55,10 @@ dytools/
 │   ├── base.py          # StorageHandler ABC (async context manager)
 │   ├── postgres.py      # PostgreSQLStorage — use factory: await PostgreSQLStorage.create(...)
 │   └── csv.py           # CSVStorage + ConsoleStorage
+├── service/
+│   ├── __init__.py      # Exports ServiceManager
+│   ├── manager.py       # ServiceManager class for systemd operations
+│   └── templates.py     # Systemd unit file templates
 └── tools/
     ├── rank.py          # User/content frequency ranking
     ├── prune.py         # Duplicate removal
@@ -172,6 +176,25 @@ except psycopg.Error as e:
 - `PostgreSQLStorage` requires the async factory: `storage = await PostgreSQLStorage.create(...)`
 - `StorageHandler` subclasses support `async with` for automatic resource cleanup
 - Storage handlers use async psycopg3 (`AsyncConnection`) — do not use blocking psycopg calls
+### Subprocess Patterns
+
+When executing external commands (like `systemctl` or `journalctl`), follow these security and reliability rules:
+
+- **Never use `shell=True`**: Always pass arguments as a list to prevent shell injection.
+- **Capture output**: Use `capture_output=True` and `text=True` for easier processing.
+- **Manual error handling**: Set `check=False` and explicitly inspect `returncode` and `stderr` to provide context-rich error messages.
+
+```python
+def _systemctl(self, args: list[str]) -> subprocess.CompletedProcess[str]:
+    # Security: List form only, NEVER shell=True
+    return subprocess.run(
+        ["systemctl", "--user"] + args, 
+        capture_output=True, 
+        text=True, 
+        check=False
+    )
+```
+
 
 ---
 
