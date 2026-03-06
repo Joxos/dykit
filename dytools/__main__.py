@@ -49,12 +49,14 @@ import psycopg
 from psycopg import conninfo as psycopg_conninfo
 
 from dytools.collectors import AsyncCollector
-from dytools.constants import USER_FILTERABLE_TYPES
+from dytools.constants import USER_FILTERABLE_TYPES_DESCRIBED
 from dytools.log import logger
 from dytools.service import ServiceManager
 from dytools.storage import PostgreSQLStorage
 from dytools.tools import cluster, prune, rank, search
 
+# Human-readable description of each filterable type for --help text.
+_TYPES_HELP = ", ".join(f"{t}（{desc}）" for t, desc in USER_FILTERABLE_TYPES_DESCRIBED)
 
 def _resolve_room_for_query(room: str) -> str:
     """Resolve a room ID to real room ID for database queries.
@@ -104,7 +106,7 @@ def cli(ctx: click.Context, dsn: str | None) -> None:
     default=None,
     help=(
         "Include only these message types (comma-separated). "
-        f"Available: {', '.join(USER_FILTERABLE_TYPES)}. "
+        f"Available: {_TYPES_HELP}. "
         "Example: --with chatmsg,dgb,uenter"
     ),
 )
@@ -114,7 +116,7 @@ def cli(ctx: click.Context, dsn: str | None) -> None:
     default=None,
     help=(
         "Exclude these message types (comma-separated). "
-        f"Available: {', '.join(USER_FILTERABLE_TYPES)}. "
+        f"Available: {_TYPES_HELP}. "
         "Example: --without uenter"
     ),
 )
@@ -777,18 +779,57 @@ def service(ctx: click.Context) -> None:
 @service.command(name="create")
 @click.argument("spec")
 @click.option("--dsn", envvar="DYTOOLS_DSN", help="PostgreSQL DSN (or set DYTOOLS_DSN)")
+@click.option(
+    "--with",
+    "msg_types_include",
+    default=None,
+    help=(
+        "Include only these message types (comma-separated). "
+        f"Available: {_TYPES_HELP}. "
+        "Example: --with chatmsg,dgb"
+    ),
+)
+@click.option(
+    "--without",
+    "msg_types_exclude",
+    default=None,
+    help=(
+        "Exclude these message types (comma-separated). "
+        f"Available: {_TYPES_HELP}. "
+        "Example: --without uenter"
+    ),
+)
+@click.option("-v", "--verbose", is_flag=True, help="Enable debug logging for the collector")
 @click.pass_context
-def create_service(ctx: click.Context, spec: str, dsn: str | None) -> None:
+def create_service(
+    ctx: click.Context,
+    spec: str,
+    dsn: str | None,
+    msg_types_include: str | None,
+    msg_types_exclude: str | None,
+    verbose: bool,
+) -> None:
     """Create and start a new dytools collector service.
 
     SPEC must be in NAME:ROOM format (e.g., test-room:6657).
     """
+    # Validate mutual exclusion: cannot use both --with and --without
+    if msg_types_include is not None and msg_types_exclude is not None:
+        click.echo("Error: Cannot use both --with and --without together", err=True)
+        sys.exit(1)
+
     # Resolve DSN from context if not provided
     dsn = dsn or (ctx.obj.get("dsn") if ctx.obj else None)
 
     sm = ServiceManager()
     try:
-        sm.create(spec, dsn)
+        sm.create(
+            spec,
+            dsn,
+            with_types=msg_types_include,
+            without_types=msg_types_exclude,
+            verbose=verbose,
+        )
     except ValueError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)

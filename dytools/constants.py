@@ -13,13 +13,15 @@ MAX_PACKET_SIZE = 65536
 PROTOCOL_MESSAGE_TYPES: frozenset[str] = frozenset({"loginres", "mrkl", "loginreq", "joingroup"})
 
 # User-facing message types that can be filtered, ranked, or analyzed.
-USER_FILTERABLE_TYPES: tuple[str, ...] = (
-    "chatmsg",
-    "dgb",
-    "uenter",
-    "anbc",
-    "rnewbc",
-    "blab",
-    "upgrade",
-    "unknown",
+# Each entry is (type_name, human_readable_description).
+USER_FILTERABLE_TYPES_DESCRIBED: tuple[tuple[str, str], ...] = (
+    ("chatmsg", "弹幕"),
+    ("dgb", "礼物"),
+    ("uenter", "进场"),
+    ("anbc", "开通贵族"),
+    ("rnewbc", "续费贵族"),
+    ("blab", "粉丝牌升级"),
+    ("upgrade", "用户升级"),
 )
+
+USER_FILTERABLE_TYPES: tuple[str, ...] = tuple(t for t, _ in USER_FILTERABLE_TYPES_DESCRIBED)
