@@ -35,7 +35,7 @@ from .protocol import (
 from .storage import ConsoleStorage, CSVStorage, StorageHandler
 from .types import DanmuMessage, MessageType
 
-__version__ = "4.0.0"
+__version__ = "4.0.2"
 
 __all__ = [
     # Version
