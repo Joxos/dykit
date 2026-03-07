@@ -57,8 +57,8 @@ from ..constants import (
     RETRY_BACKOFF_WS_SEND_MAX_SECONDS,
     RETRY_BACKOFF_WS_SEND_MIN_SECONDS,
     RETRY_BACKOFF_WS_SEND_MULTIPLIER,
-    WS_CONNECT_PING_INTERVAL_SECONDS,
-    WS_CONNECT_PING_TIMEOUT_SECONDS,
+    WS_DOUYU_HEARTBEAT_SECONDS,
+    WS_READ_IDLE_TIMEOUT_SECONDS,
     WS_RECOVERY_BACKOFF_SECONDS,
     WS_SERVER_REFRESH_INTERVAL_SECONDS,
 )
@@ -161,6 +161,7 @@ class AsyncCollector(BaseCollector):
         self._last_discovery_time = 0.0
         self._candidate_urls: list[str] = []
         self._candidate_index = 0
+        self._heartbeat_task: asyncio.Task[None] | None = None
 
     async def connect(self) -> None:
         """Connect to Douyu WebSocket server and start receiving messages.
@@ -204,6 +205,7 @@ class AsyncCollector(BaseCollector):
                             logger.info(f"Connected to {url}")
                             await self._send_login()
                             await self._send_joingroup()
+                            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
                             await self._process_messages()
                             logger.info(f"Connection to {url} closed normally")
                     except asyncio.CancelledError:
@@ -212,6 +214,7 @@ class AsyncCollector(BaseCollector):
                     except Exception as e:
                         cycle_errors.append(str(e))
                         logger.warning(f"Failed to connect to {url}: {e}")
+                        await self._stop_heartbeat()
                         await self._refresh_candidates_if_needed(force=True)
                         self._websocket = None
                         continue
@@ -225,6 +228,7 @@ class AsyncCollector(BaseCollector):
                     await asyncio.sleep(WS_RECOVERY_BACKOFF_SECONDS)
                     await self._refresh_candidates_if_needed(force=True)
         finally:
+            await self._stop_heartbeat()
             self._websocket = None
             self._running = False
 
@@ -294,8 +298,8 @@ class AsyncCollector(BaseCollector):
                     url,
                     ssl=ssl_context,
                     origin=Origin("https://www.douyu.com"),
-                    ping_interval=WS_CONNECT_PING_INTERVAL_SECONDS,
-                    ping_timeout=WS_CONNECT_PING_TIMEOUT_SECONDS,
+                    ping_interval=None,
+                    ping_timeout=None,
                 )
 
         raise RuntimeError("WebSocket connection retry exhausted")
@@ -338,7 +342,10 @@ class AsyncCollector(BaseCollector):
             raise RuntimeError("WebSocket not connected")
 
         try:
-            async for message in self._websocket:
+            while self._running and self._websocket:
+                message = await asyncio.wait_for(
+                    self._websocket.recv(), timeout=WS_READ_IDLE_TIMEOUT_SECONDS
+                )
                 if not self._running:
                     break
 
@@ -358,6 +365,11 @@ class AsyncCollector(BaseCollector):
         except ConnectionClosed as e:
             logger.warning(f"WebSocket connection closed: code={e.code}, reason={e.reason}")
             raise
+        except TimeoutError:
+            logger.warning(
+                f"No message received for {WS_READ_IDLE_TIMEOUT_SECONDS}s, reconnecting..."
+            )
+            raise
 
     async def _refresh_candidates_if_needed(self, force: bool = False) -> None:
         now = asyncio.get_running_loop().time()
@@ -370,6 +382,25 @@ class AsyncCollector(BaseCollector):
         self._last_discovery_time = now
         if self._candidate_index >= len(self._candidate_urls):
             self._candidate_index = 0
+
+    async def _heartbeat_loop(self) -> None:
+        while self._running and self._websocket:
+            await asyncio.sleep(WS_DOUYU_HEARTBEAT_SECONDS)
+            if not self._running or not self._websocket:
+                return
+            heartbeat_msg = serialize_message({"type": "mrkl"})
+            await self._send_with_retry(encode_message(heartbeat_msg))
+            logger.debug("Sent mrkl heartbeat")
+
+    async def _stop_heartbeat(self) -> None:
+        if not self._heartbeat_task:
+            return
+        self._heartbeat_task.cancel()
+        try:
+            await self._heartbeat_task
+        except asyncio.CancelledError:
+            pass
+        self._heartbeat_task = None
 
     async def _handle_message(self, msg_type: str, msg_dict: dict[str, str]) -> None:
         if msg_type == "loginres":
