@@ -14,7 +14,7 @@ from dykit.cli.services.dbio import export_room_to_csv, import_csv_to_db
 def register(cli: click.Group) -> None:
     @cli.command("import", short_help="Import CSV data into database")
     @click.argument("file", type=click.Path(exists=True))
-    @room_option(help_text="Target room ID for imported data")
+    @room_option(help_text="Target room ID")
     @click.pass_context
     def _import_csv(ctx: click.Context, file: str, room: str) -> None:
         dsn = get_dsn(ctx)

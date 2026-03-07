@@ -26,7 +26,7 @@ def with_types_option(example: str = "--with chatmsg,dgb,uenter") -> Any:
         "msg_types_include",
         default=None,
         help=(
-            "Include only these message types (comma-separated). "
+            "Filter to only these message types (comma-separated). "
             f"Available: {TYPES_HELP}. "
             f"Example: {example}"
         ),
@@ -39,7 +39,7 @@ def without_types_option() -> Any:
         "msg_types_exclude",
         default=None,
         help=(
-            "Exclude these message types (comma-separated). "
+            "Filter out these message types (comma-separated). "
             f"Available: {TYPES_HELP}. "
             "Example: --without uenter"
         ),
@@ -51,15 +51,15 @@ def search_from_option() -> Any:
 
 
 def search_to_option() -> Any:
-    return click.option("--to", "to_date", help="End date (YYYY-MM-DD)")
+    return click.option("--to", "to_date", help="End date (YYYY-MM-DD, inclusive)")
 
 
 def search_last_option() -> Any:
-    return click.option("--last", type=int, help="Show last (most recent) N messages")
+    return click.option("--last", type=int, help="Use the last N (most recent) messages")
 
 
 def search_first_option() -> Any:
-    return click.option("--first", type=int, help="Show first (earliest) N messages")
+    return click.option("--first", type=int, help="Use the first N (earliest) messages")
 
 
 def username_option(short: bool = False) -> Any:

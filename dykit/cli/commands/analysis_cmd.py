@@ -54,16 +54,16 @@ def _validate_rank_and_cluster_filter_window(
 def register(cli: click.Group) -> None:
     @cli.command(name="rank", short_help="Show ranking statistics")
     @room_option()
-    @click.option("--top", default=10, help="Top N results (default: 10)")
+    @click.option("--top", default=10, help="Show top N results")
     @msg_type_option(default="chatmsg")
-    @click.option("--days", type=int, help="Days to look back (default: all time)")
+    @click.option("--days", type=int, help="Filter to messages from the last N days")
     @click.option(
         "--by",
         "mode",
         type=click.Choice(["user", "content"]),
         default="user",
         show_default=True,
-        help="Rank dimension",
+        help="Choose ranking dimension",
     )
     @username_option(short=True)
     @user_id_option()
@@ -71,7 +71,7 @@ def register(cli: click.Group) -> None:
     @search_to_option()
     @search_last_option()
     @search_first_option()
-    @output_option(help_text="Export rank results to CSV (optional)")
+    @output_option(help_text="Write rank results to CSV")
     @click.pass_context
     def _rank_cmd(
         ctx: click.Context,
@@ -140,10 +140,8 @@ def register(cli: click.Group) -> None:
 
     @cli.command(name="cluster", short_help="Cluster similar chat messages")
     @room_option()
-    @click.option(
-        "--threshold", default=0.6, type=float, help="Similarity threshold (default: 0.6)"
-    )
-    @click.option("--limit", default=1000, type=int, help="Max messages to analyze (default: 1000)")
+    @click.option("--threshold", default=0.6, type=float, help="Set similarity threshold")
+    @click.option("--limit", default=1000, type=int, help="Limit source messages before clustering")
     @msg_type_option(default="chatmsg")
     @username_option(short=True)
     @user_id_option()
@@ -151,7 +149,7 @@ def register(cli: click.Group) -> None:
     @search_to_option()
     @search_last_option()
     @search_first_option()
-    @click.option("--days", type=int, help="Days to look back (default: all time)")
+    @click.option("--days", type=int, help="Filter to messages from the last N days")
     @output_option()
     @click.pass_context
     def _cluster_cmd(

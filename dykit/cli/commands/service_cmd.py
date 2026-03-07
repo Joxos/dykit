@@ -29,10 +29,10 @@ def register(cli: click.Group) -> None:
 
     @service.command(name="create", short_help="Create a user service")
     @click.argument("spec")
-    @click.option("--dsn", envvar="DYTOOLS_DSN", help="PostgreSQL DSN (or set DYTOOLS_DSN)")
+    @click.option("--dsn", envvar="DYTOOLS_DSN", help="PostgreSQL DSN (or DYTOOLS_DSN env var)")
     @with_types_option(example="--with chatmsg,dgb")
     @without_types_option()
-    @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging for the collector")
+    @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging")
     @click.pass_context
     def _create_service(
         ctx: click.Context,
@@ -121,9 +121,7 @@ def register(cli: click.Group) -> None:
 
     @service.command(name="logs", short_help="Show service logs")
     @click.argument("service_name")
-    @click.option(
-        "-n", "--lines", type=int, default=50, help="Number of log lines to show (default: 50)"
-    )
+    @click.option("-n", "--lines", type=int, default=50, help="Show the last N log lines")
     def _logs_service(service_name: str, lines: int) -> None:
         sm = ServiceManager()
         try:

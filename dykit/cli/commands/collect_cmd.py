@@ -23,7 +23,7 @@ AsyncCollector = None
 def register(cli: click.Group) -> None:
     @cli.command(name="collect", short_help="Collect danmu messages from a room")
     @room_option()
-    @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging")
+    @click.option("-v", "--verbose", is_flag=True, help="Enable debug-level logging")
     @with_types_option()
     @without_types_option()
     @click.pass_context
