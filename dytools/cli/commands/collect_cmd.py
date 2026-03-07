@@ -15,6 +15,9 @@ from dytools.cli.options import (
     without_types_option,
 )
 from dytools.log import logger
+from dytools.storage import PostgreSQLStorage
+
+AsyncCollector = None
 
 
 def register(cli: click.Group) -> None:
@@ -31,8 +34,6 @@ def register(cli: click.Group) -> None:
         msg_types_include: str | None,
         msg_types_exclude: str | None,
     ) -> None:
-        from dytools import __main__ as main_module
-
         dsn = get_dsn(ctx)
         validate_with_without(msg_types_include, msg_types_exclude)
 
@@ -44,9 +45,13 @@ def register(cli: click.Group) -> None:
         )
 
         async def run_collector() -> None:
+            collector_cls = AsyncCollector
+            if collector_cls is None:
+                from dytools.collectors import AsyncCollector as collector_cls
+
             try:
                 conn_params = psycopg_conninfo.conninfo_to_dict(dsn)
-                storage = await main_module.PostgreSQLStorage.create(
+                storage = await PostgreSQLStorage.create(
                     room_id=room,
                     host=to_str(conn_params.get("host"), "localhost"),
                     port=to_int(conn_params.get("port"), 5432),
@@ -55,7 +60,7 @@ def register(cli: click.Group) -> None:
                     password=to_str(conn_params.get("password"), ""),
                 )
                 async with storage:
-                    collector = main_module.AsyncCollector(
+                    collector = collector_cls(
                         room,
                         storage,
                         type_filter=type_filter,

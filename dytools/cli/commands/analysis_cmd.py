@@ -3,8 +3,9 @@ from __future__ import annotations
 import sys
 
 import click
+import psycopg
 
-from dytools.cli.common import get_dsn
+from dytools.cli.common import get_dsn, resolve_room_for_query
 from dytools.cli.formatters import (
     show_cluster_results,
     show_content_rank,
@@ -21,6 +22,7 @@ from dytools.cli.options import (
     validate_last_first,
     validate_user_content,
 )
+from dytools.cli.rich_output import err, out
 from dytools.cli.services.analysis_flow import (
     run_cluster,
     run_prune,
@@ -30,6 +32,7 @@ from dytools.cli.services.analysis_flow import (
     summarize_search_sort,
 )
 from dytools.cli.services.dbio import export_clusters_to_csv, export_search_results_to_csv
+from dytools.tools import cluster, prune, rank, search
 
 
 def register(cli: click.Group) -> None:
@@ -55,16 +58,14 @@ def register(cli: click.Group) -> None:
         user: bool,
         content_mode: bool,
     ) -> None:
-        from dytools import __main__ as main_module
-
         dsn = get_dsn(ctx)
         validate_user_content(user, content_mode)
 
         mode = "content" if content_mode else "user"
         try:
             results = run_rank(
-                main_module.rank,
-                main_module.resolve_room_for_query,
+                rank,
+                resolve_room_for_query,
                 dsn,
                 room,
                 top,
@@ -73,30 +74,26 @@ def register(cli: click.Group) -> None:
                 mode,
             )
             if not results:
-                click.echo(f"No {msg_type} messages found for room {room}")
+                out(f"No {msg_type} messages found for room {room}")
                 return
             if mode == "user":
                 show_user_rank(results, room, msg_type, days)
             else:
                 show_content_rank(results, room, days)
-        except main_module.psycopg.Error as e:
-            click.echo(f"Error: Database query failed: {e}", err=True)
+        except psycopg.Error as e:
+            err(f"Error: Database query failed: {e}")
             sys.exit(1)
 
     @cli.command(name="prune", short_help="Remove duplicate records")
     @room_option()
     @click.pass_context
     def _prune_cmd(ctx: click.Context, room: str) -> None:
-        from dytools import __main__ as main_module
-
         dsn = get_dsn(ctx)
         try:
-            removed_count = run_prune(
-                main_module.prune, main_module.resolve_room_for_query, dsn, room
-            )
-            click.echo(f"Removed {removed_count} duplicate records from room {room}")
-        except main_module.psycopg.Error as e:
-            click.echo(f"Error: Database operation failed: {e}", err=True)
+            removed_count = run_prune(prune, resolve_room_for_query, dsn, room)
+            out(f"Removed {removed_count} duplicate records from room {room}")
+        except psycopg.Error as e:
+            err(f"Error: Database operation failed: {e}")
             sys.exit(1)
 
     @cli.command(name="cluster", short_help="Cluster similar chat messages")
@@ -114,20 +111,18 @@ def register(cli: click.Group) -> None:
         limit: int,
         output: str | None,
     ) -> None:
-        from dytools import __main__ as main_module
-
         dsn = get_dsn(ctx)
         try:
             all_clusters = run_cluster(
-                main_module.cluster,
-                main_module.resolve_room_for_query,
+                cluster,
+                resolve_room_for_query,
                 dsn,
                 room,
                 threshold,
                 limit,
             )
             if not all_clusters:
-                click.echo(f"No messages found in room {room}")
+                out(f"No messages found in room {room}")
                 return
 
             total_unique = sum(len(c) for c in all_clusters)
@@ -135,15 +130,15 @@ def register(cli: click.Group) -> None:
             multi_clusters.sort(key=lambda c: sum(cnt for _, cnt in c), reverse=True)
 
             if not multi_clusters:
-                click.echo(f"No clusters found with threshold {threshold}")
+                out(f"No clusters found with threshold {threshold}")
                 return
 
             show_cluster_results(multi_clusters, threshold, total_unique)
             if output:
                 export_clusters_to_csv(multi_clusters, output)
-                click.echo(f"Cluster data saved to {output}")
-        except main_module.psycopg.Error as e:
-            click.echo(f"Error: Database query failed: {e}", err=True)
+                out(f"Cluster data saved to {output}")
+        except psycopg.Error as e:
+            err(f"Error: Database query failed: {e}")
             sys.exit(1)
 
     @cli.command(name="search", short_help="Search messages with filters")
@@ -175,15 +170,13 @@ def register(cli: click.Group) -> None:
         first: int | None,
         output: str | None,
     ) -> None:
-        from dytools import __main__ as main_module
-
         dsn = get_dsn(ctx)
         validate_last_first(last, first)
 
         try:
             results = run_search(
-                main_module.search,
-                main_module.resolve_room_for_query,
+                search,
+                resolve_room_for_query,
                 dsn,
                 room,
                 query,
@@ -196,7 +189,7 @@ def register(cli: click.Group) -> None:
                 first,
             )
             if not results:
-                click.echo(f"No messages found for room {room}")
+                out(f"No messages found for room {room}")
                 return
 
             search_str = summarize_search_filter(query, user, user_id, msg_type)
@@ -206,9 +199,9 @@ def register(cli: click.Group) -> None:
 
             if output:
                 export_search_results_to_csv(results, output)
-                click.echo(f"\nResults exported to {output}")
-        except main_module.psycopg.Error as e:
-            click.echo(f"Error: Database query failed: {e}", err=True)
+                out(f"\nResults exported to {output}")
+        except psycopg.Error as e:
+            err(f"Error: Database query failed: {e}")
             sys.exit(1)
 
     _registered = (_rank_cmd, _prune_cmd, _cluster_cmd, _search_cmd)

@@ -44,8 +44,10 @@ from typing import Any
 import websockets
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential
 from websockets import Origin
+from websockets.exceptions import ConnectionClosed
 
 from ..buffer import MessageBuffer
+from ..cli.formatters import show_live_message
 from ..constants import (
     RETRY_ATTEMPTS_WS_CONNECT,
     RETRY_ATTEMPTS_WS_SEND,
@@ -55,6 +57,10 @@ from ..constants import (
     RETRY_BACKOFF_WS_SEND_MAX_SECONDS,
     RETRY_BACKOFF_WS_SEND_MIN_SECONDS,
     RETRY_BACKOFF_WS_SEND_MULTIPLIER,
+    WS_CONNECT_PING_INTERVAL_SECONDS,
+    WS_CONNECT_PING_TIMEOUT_SECONDS,
+    WS_RECOVERY_BACKOFF_SECONDS,
+    WS_SERVER_REFRESH_INTERVAL_SECONDS,
 )
 from ..log import logger
 from ..protocol import (
@@ -152,6 +158,9 @@ class AsyncCollector(BaseCollector):
         self._buffer = MessageBuffer()
         self._running = False
         self._websocket: Any = None
+        self._last_discovery_time = 0.0
+        self._candidate_urls: list[str] = []
+        self._candidate_index = 0
 
     async def connect(self) -> None:
         """Connect to Douyu WebSocket server and start receiving messages.
@@ -167,57 +176,57 @@ class AsyncCollector(BaseCollector):
             asyncio.CancelledError: If the task is cancelled during operation.
             Exception: Any exception from WebSocket connection or SSL handshake.
         """
+        self._running = True
+
         # Configure SSL context for Douyu servers
         ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
         ssl_context.set_ciphers("DEFAULT@SECLEVEL=1")
 
-        # Discover candidate WebSocket URLs (returns list)
-        candidate_urls, self._real_room_id = get_danmu_server(
-            self.room_id, manual_url=self.ws_url_override
-        )
+        try:
+            while self._running:
+                await self._refresh_candidates_if_needed(force=not self._candidate_urls)
+                if not self._candidate_urls:
+                    logger.warning("No danmu servers discovered, retrying after backoff")
+                    await asyncio.sleep(WS_RECOVERY_BACKOFF_SECONDS)
+                    continue
 
-        # Try each candidate URL until one works
-        last_error = None
-        for url in candidate_urls:
-            try:
-                logger.info(f"Trying server: {url}")
+                cycle_errors: list[str] = []
+                for _ in range(len(self._candidate_urls)):
+                    url = self._candidate_urls[self._candidate_index % len(self._candidate_urls)]
+                    self._candidate_index += 1
+                    try:
+                        logger.info(f"Trying server: {url}")
+                        websocket = await self._connect_with_retry(url, ssl_context)
+                        async with websocket:
+                            self._websocket = websocket
+                            logger.info(f"Connected to {url}")
+                            await self._send_login()
+                            await self._send_joingroup()
+                            await self._process_messages()
+                            logger.info(f"Connection to {url} closed normally")
+                    except asyncio.CancelledError:
+                        logger.info("Async collector cancelled")
+                        raise
+                    except Exception as e:
+                        cycle_errors.append(str(e))
+                        logger.warning(f"Failed to connect to {url}: {e}")
+                        await self._refresh_candidates_if_needed(force=True)
+                        self._websocket = None
+                        continue
 
-                websocket = await self._connect_with_retry(url, ssl_context)
-                async with websocket:
-                    self._websocket = websocket
-                    self._running = True
-                    logger.info(f"Connected to {url}")
-
-                    # Send login request
-                    await self._send_login()
-
-                    # Send joingroup request
-                    await self._send_joingroup()
-
-                    # Process incoming messages
-                    await self._process_messages()
-
-                    # If we reach here, connection was successful and then closed normally
-                    logger.info(f"Connection to {url} closed normally")
-                    return
-
-            except asyncio.CancelledError:
-                logger.info("Async collector cancelled")
-                raise
-            except Exception as e:
-                last_error = e
-                logger.warning(f"Failed to connect to {url}: {e}")
-                self._running = False
-                self._websocket = None
-                continue
-
-        # If we tried all URLs and all failed
-        raise RuntimeError(
-            f"Failed to connect to any danmu server after trying {len(candidate_urls)} URLs. "
-            f"Last error: {last_error}"
-        )
+                if cycle_errors:
+                    logger.warning(
+                        "All current danmu servers failed once. "
+                        f"Will retry after {WS_RECOVERY_BACKOFF_SECONDS}s. "
+                        f"Last error: {cycle_errors[-1]}"
+                    )
+                    await asyncio.sleep(WS_RECOVERY_BACKOFF_SECONDS)
+                    await self._refresh_candidates_if_needed(force=True)
+        finally:
+            self._websocket = None
+            self._running = False
 
     async def stop(self) -> None:
         """Stop the collector gracefully.
@@ -285,8 +294,8 @@ class AsyncCollector(BaseCollector):
                     url,
                     ssl=ssl_context,
                     origin=Origin("https://www.douyu.com"),
-                    ping_interval=45,
-                    ping_timeout=20,
+                    ping_interval=WS_CONNECT_PING_INTERVAL_SECONDS,
+                    ping_timeout=WS_CONNECT_PING_TIMEOUT_SECONDS,
                 )
 
         raise RuntimeError("WebSocket connection retry exhausted")
@@ -346,6 +355,21 @@ class AsyncCollector(BaseCollector):
         except asyncio.CancelledError:
             logger.debug("Message processing cancelled")
             raise
+        except ConnectionClosed as e:
+            logger.warning(f"WebSocket connection closed: code={e.code}, reason={e.reason}")
+            raise
+
+    async def _refresh_candidates_if_needed(self, force: bool = False) -> None:
+        now = asyncio.get_running_loop().time()
+        if not force and (now - self._last_discovery_time) < WS_SERVER_REFRESH_INTERVAL_SECONDS:
+            return
+        candidate_urls, self._real_room_id = get_danmu_server(
+            self.room_id, manual_url=self.ws_url_override
+        )
+        self._candidate_urls = candidate_urls
+        self._last_discovery_time = now
+        if self._candidate_index >= len(self._candidate_urls):
+            self._candidate_index = 0
 
     async def _handle_message(self, msg_type: str, msg_dict: dict[str, str]) -> None:
         if msg_type == "loginres":
@@ -371,7 +395,7 @@ class AsyncCollector(BaseCollector):
         level = msg_dict.get("level", "0")
         uid = msg_dict.get("uid", "0")
 
-        logger.info(f"[{nickname}] Lv{level}: {content}")
+        show_live_message(nickname, int(level) if level.isdigit() else 0, content, "chatmsg")
 
         try:
             danmu_message = DanmuMessage(
@@ -406,7 +430,12 @@ class AsyncCollector(BaseCollector):
             "bl": msg_dict.get("bl", "?"),
             "user_level": str(danmu_message.user_level),
         }
-        logger.info(f"[{danmu_message.username}] {template.format(**context)}")
+        show_live_message(
+            danmu_message.username,
+            danmu_message.user_level,
+            template.format(**context),
+            msg_type.value,
+        )
 
         try:
             await self.storage.save(danmu_message)

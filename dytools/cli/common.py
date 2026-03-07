@@ -5,14 +5,14 @@ from typing import NoReturn
 
 import click
 
+from dytools.cli.rich_output import err
 from dytools.constants import USER_FILTERABLE_TYPES_DESCRIBED
-from dytools.log import logger
 
 TYPES_HELP = ", ".join(f"{t}（{desc}）" for t, desc in USER_FILTERABLE_TYPES_DESCRIBED)
 
 
 def fail(message: str) -> NoReturn:
-    click.echo(f"Error: {message}", err=True)
+    err(f"Error: {message}")
     sys.exit(1)
 
 
@@ -32,12 +32,8 @@ def get_dsn_or(ctx: click.Context, supplied_dsn: str | None) -> str:
 def resolve_room_for_query(room: str) -> str:
     from dytools.protocol import resolve_room_id
 
-    try:
-        real_id = resolve_room_id(int(room))
-        return str(real_id)
-    except Exception:
-        logger.warning(f"Could not resolve room {room}, using as-is")
-        return room
+    real_id = resolve_room_id(int(room))
+    return str(real_id)
 
 
 def ensure_mutually_exclusive(

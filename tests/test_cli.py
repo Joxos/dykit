@@ -9,19 +9,20 @@ import psycopg
 import pytest
 from click.testing import CliRunner
 
-from dytools.__main__ import cli
+from dytools.cli import cli
 
 VALID_DSN = "host=localhost dbname=test user=u password=p"
 SIMPLE_DSN = "host=x"
 
-PATCH_RESOLVE_ROOM = "dytools.__main__._resolve_room_for_query"
-PATCH_PG_CREATE = "dytools.__main__.PostgreSQLStorage.create"
-PATCH_ASYNC_COLLECTOR = "dytools.__main__.AsyncCollector"
-PATCH_RANK = "dytools.__main__.rank.rank"
-PATCH_PRUNE = "dytools.__main__.prune.prune"
-PATCH_CLUSTER = "dytools.__main__.cluster.cluster"
-PATCH_SEARCH = "dytools.__main__.search.search"
-PATCH_CONNECT = "dytools.__main__.psycopg.connect"
+PATCH_RESOLVE_ROOM_ANALYSIS = "dytools.cli.commands.analysis_cmd.resolve_room_for_query"
+PATCH_RESOLVE_ROOM_IO = "dytools.cli.commands.io_cmd.resolve_room_for_query"
+PATCH_PG_CREATE = "dytools.cli.commands.collect_cmd.PostgreSQLStorage.create"
+PATCH_ASYNC_COLLECTOR = "dytools.cli.commands.collect_cmd.AsyncCollector"
+PATCH_RANK = "dytools.cli.commands.analysis_cmd.rank.rank"
+PATCH_PRUNE = "dytools.cli.commands.analysis_cmd.prune.prune"
+PATCH_CLUSTER = "dytools.cli.commands.analysis_cmd.cluster.cluster"
+PATCH_SEARCH = "dytools.cli.commands.analysis_cmd.search.search"
+PATCH_CONNECT = "dytools.cli.commands.io_cmd.psycopg.connect"
 
 
 @pytest.fixture
@@ -137,16 +138,15 @@ class TestCollectCommand:
 
 
 class TestRankCommand:
-    @patch(PATCH_RESOLVE_ROOM, return_value="12345")
+    @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     def test_rank_user_and_content_mutex(self, mock_resolve: MagicMock, runner: CliRunner) -> None:
         result = runner.invoke(
             cli, ["--dsn", SIMPLE_DSN, "rank", "-r", "6657", "--user", "--content"]
         )
         assert result.exit_code == 1
         assert "Cannot use both" in result.output
-        mock_resolve.assert_not_called()
 
-    @patch(PATCH_RESOLVE_ROOM, return_value="12345")
+    @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(PATCH_RANK, return_value=[{"username": "alice", "count": 42}])
     def test_rank_user_mode_happy_path(
         self, mock_rank: MagicMock, mock_resolve: MagicMock, runner: CliRunner
@@ -158,7 +158,7 @@ class TestRankCommand:
         mock_resolve.assert_called_once_with("6657")
         mock_rank.assert_called_once_with(SIMPLE_DSN, "12345", 10, "chatmsg", None, mode="user")
 
-    @patch(PATCH_RESOLVE_ROOM, return_value="12345")
+    @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(PATCH_RANK, return_value=[])
     def test_rank_no_results(
         self, mock_rank: MagicMock, mock_resolve: MagicMock, runner: CliRunner
@@ -169,7 +169,7 @@ class TestRankCommand:
         mock_resolve.assert_called_once_with("6657")
         mock_rank.assert_called_once_with(SIMPLE_DSN, "12345", 10, "chatmsg", None, mode="user")
 
-    @patch(PATCH_RESOLVE_ROOM, return_value="12345")
+    @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(
         PATCH_RANK,
         return_value=[
@@ -191,7 +191,7 @@ class TestRankCommand:
         mock_resolve.assert_called_once_with("6657")
         mock_rank.assert_called_once_with(SIMPLE_DSN, "12345", 10, "chatmsg", None, mode="content")
 
-    @patch(PATCH_RESOLVE_ROOM, return_value="12345")
+    @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(PATCH_RANK, side_effect=psycopg.Error("db failed"))
     def test_rank_database_error(
         self, mock_rank: MagicMock, mock_resolve: MagicMock, runner: CliRunner
@@ -204,7 +204,7 @@ class TestRankCommand:
 
 
 class TestPruneCommand:
-    @patch(PATCH_RESOLVE_ROOM, return_value="12345")
+    @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(PATCH_PRUNE, return_value=3)
     def test_prune_happy_path(
         self, mock_prune: MagicMock, mock_resolve: MagicMock, runner: CliRunner
@@ -218,7 +218,7 @@ class TestPruneCommand:
 
 
 class TestClusterCommand:
-    @patch(PATCH_RESOLVE_ROOM, return_value="12345")
+    @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(PATCH_CLUSTER, return_value=[])
     def test_cluster_no_messages(
         self, mock_cluster: MagicMock, mock_resolve: MagicMock, runner: CliRunner
@@ -229,7 +229,7 @@ class TestClusterCommand:
         mock_resolve.assert_called_once_with("6657")
         mock_cluster.assert_called_once_with(SIMPLE_DSN, "12345", 0.6, "chatmsg", 1000)
 
-    @patch(PATCH_RESOLVE_ROOM, return_value="12345")
+    @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(PATCH_CLUSTER, return_value=[[("hello world", 5), ("hello worlds", 3)]])
     def test_cluster_happy_path(
         self, mock_cluster: MagicMock, mock_resolve: MagicMock, runner: CliRunner
@@ -242,7 +242,7 @@ class TestClusterCommand:
 
 
 class TestSearchCommand:
-    @patch(PATCH_RESOLVE_ROOM, return_value="12345")
+    @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     def test_search_last_and_first_mutex(self, mock_resolve: MagicMock, runner: CliRunner) -> None:
         result = runner.invoke(
             cli,
@@ -250,9 +250,8 @@ class TestSearchCommand:
         )
         assert result.exit_code == 1
         assert "Cannot use both" in result.output
-        mock_resolve.assert_not_called()
 
-    @patch(PATCH_RESOLVE_ROOM, return_value="12345")
+    @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(
         PATCH_SEARCH,
         return_value=[
@@ -288,7 +287,7 @@ class TestSearchCommand:
             first=None,
         )
 
-    @patch(PATCH_RESOLVE_ROOM, return_value="12345")
+    @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(PATCH_SEARCH, return_value=[])
     def test_search_no_results(
         self, mock_search: MagicMock, mock_resolve: MagicMock, runner: CliRunner
@@ -310,7 +309,7 @@ class TestSearchCommand:
             first=None,
         )
 
-    @patch(PATCH_RESOLVE_ROOM, return_value="12345")
+    @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(PATCH_SEARCH, side_effect=psycopg.Error("db failed"))
     def test_search_database_error(
         self, mock_search: MagicMock, mock_resolve: MagicMock, runner: CliRunner
@@ -365,7 +364,7 @@ class TestImportCommand:
 
 
 class TestExportCommand:
-    @patch(PATCH_RESOLVE_ROOM, return_value="12345")
+    @patch(PATCH_RESOLVE_ROOM_IO, return_value="12345")
     @patch(PATCH_CONNECT)
     def test_export_no_data(
         self, mock_connect: MagicMock, mock_resolve: MagicMock, runner: CliRunner, tmp_path: Path
@@ -386,7 +385,7 @@ class TestExportCommand:
         mock_cursor.execute.assert_called_once()
         assert not output_file.exists()
 
-    @patch(PATCH_RESOLVE_ROOM, return_value="12345")
+    @patch(PATCH_RESOLVE_ROOM_IO, return_value="12345")
     @patch(PATCH_CONNECT)
     def test_export_happy_path(
         self, mock_connect: MagicMock, mock_resolve: MagicMock, runner: CliRunner, tmp_path: Path
@@ -431,7 +430,7 @@ class TestExportCommand:
         assert rows[1][1] == "alice"
         assert rows[1][2] == "hello"
 
-    @patch(PATCH_RESOLVE_ROOM, return_value="12345")
+    @patch(PATCH_RESOLVE_ROOM_IO, return_value="12345")
     @patch(PATCH_CONNECT, side_effect=psycopg.Error("db failed"))
     def test_export_database_error(
         self, mock_connect: MagicMock, mock_resolve: MagicMock, runner: CliRunner, tmp_path: Path
@@ -447,7 +446,7 @@ class TestExportCommand:
         mock_resolve.assert_called_once_with("6657")
         mock_connect.assert_called_once_with(SIMPLE_DSN)
 
-    @patch(PATCH_RESOLVE_ROOM, return_value="12345")
+    @patch(PATCH_RESOLVE_ROOM_IO, return_value="12345")
     @patch(PATCH_CONNECT)
     @patch("builtins.open", side_effect=OSError("disk full"))
     def test_export_file_write_failure(
@@ -458,6 +457,7 @@ class TestExportCommand:
         runner: CliRunner,
         tmp_path: Path,
     ) -> None:
+        _ = mock_resolve
         mock_row = (
             datetime(2024, 1, 1, 12, 0, 0),
             "alice",

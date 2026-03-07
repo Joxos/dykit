@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 
 def run_rank(
     rank_module: Any,
-    resolve_room_for_query: Any,
+    resolve_room_for_query: Callable[[str], str],
     dsn: str,
     room: str,
     top: int,
@@ -17,14 +18,16 @@ def run_rank(
     return rank_module.rank(dsn, resolved_room, top, msg_type, days, mode=mode)
 
 
-def run_prune(prune_module: Any, resolve_room_for_query: Any, dsn: str, room: str) -> int:
+def run_prune(
+    prune_module: Any, resolve_room_for_query: Callable[[str], str], dsn: str, room: str
+) -> int:
     resolved_room = resolve_room_for_query(room)
     return prune_module.prune(dsn, resolved_room)
 
 
 def run_cluster(
     cluster_module: Any,
-    resolve_room_for_query: Any,
+    resolve_room_for_query: Callable[[str], str],
     dsn: str,
     room: str,
     threshold: float,
@@ -36,7 +39,7 @@ def run_cluster(
 
 def run_search(
     search_module: Any,
-    resolve_room_for_query: Any,
+    resolve_room_for_query: Callable[[str], str],
     dsn: str,
     room: str,
     query: str | None,

@@ -10,6 +10,7 @@ from dytools.cli.options import (
     with_types_option,
     without_types_option,
 )
+from dytools.cli.rich_output import out
 from dytools.service import ServiceManager
 
 
@@ -17,10 +18,10 @@ def register(cli: click.Group) -> None:
     @cli.group(name="service", short_help="Manage systemd user services")
     @click.pass_context
     def service(ctx: click.Context) -> None:
+        _ = ctx
         if not shutil.which("systemctl"):
-            click.echo(
-                "systemd user services not available. Ensure systemd is installed and running.",
-                err=True,
+            out(
+                "[bold red]systemd user services not available. Ensure systemd is installed and running.[/bold red]"
             )
             raise SystemExit(1)
 
@@ -62,13 +63,13 @@ def register(cli: click.Group) -> None:
         services = sm.list()
 
         if not services:
-            click.echo("No dytools services found.")
+            out("No dytools services found.")
             return
 
-        click.echo(f"{'NAME':<30} {'STATUS':<12} {'ROOM_ID':<10}")
-        click.echo("-" * 54)
+        out(f"{'NAME':<30} {'STATUS':<12} {'ROOM_ID':<10}")
+        out("-" * 54)
         for svc in services:
-            click.echo(f"{svc['name']:<30} {svc['status']:<12} {svc['room_id']:<10}")
+            out(f"{svc['name']:<30} {svc['status']:<12} {svc['room_id']:<10}")
 
     @service.command(name="start")
     @click.argument("service_name")
@@ -103,7 +104,7 @@ def register(cli: click.Group) -> None:
         sm = ServiceManager()
         try:
             output = sm.status(service_name)
-            click.echo(output, nl=False)
+            out(output)
         except RuntimeError as e:
             fail(str(e))
 
@@ -116,7 +117,7 @@ def register(cli: click.Group) -> None:
         sm = ServiceManager()
         try:
             output = sm.logs(service_name, lines)
-            click.echo(output, nl=False)
+            out(output)
         except RuntimeError as e:
             fail(str(e))
 
@@ -126,7 +127,7 @@ def register(cli: click.Group) -> None:
         sm = ServiceManager()
         try:
             path = sm.where(service_name)
-            click.echo(path)
+            out(path)
         except FileNotFoundError as e:
             fail(str(e))
 
