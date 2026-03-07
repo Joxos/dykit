@@ -121,7 +121,7 @@ Indexes: idx_danmaku_room_time, idx_danmaku_user_id, idx_danmaku_msg_type
 #### collect
 实时采集直播间弹幕。
 - `-r, --room`: 直播间 ID
-- `-v, --verbose`: 打印调试日志
+- `-v, --verbose`: 启用 debug 级日志
 ```bash
 dykit collect -r 6657 -v
 ```
@@ -132,16 +132,16 @@ dykit collect -r 6657 -v
 统计发送消息最多的用户或高频出现的重复弹幕。
 - `-r, --room`: 直播间 ID
 - `--by user|content`: 统计维度（默认 user）
-- `--top N`: 显示前 N 名 (默认 10)
-- `--type TYPE`: 过滤消息类型 (默认 chatmsg, 可选 dgb 等)
+- `--top N`: 显示 Top N 结果
+- `--type TYPE`: 按消息类型过滤（默认 chatmsg）
 - `--user USERNAME`: 按用户名过滤数据集
 - `--user-id USER_ID`: 按 user_id 过滤数据集
 - `--from YYYY-MM-DD`: 起始日期
 - `--to YYYY-MM-DD`: 结束日期（含当天）
-- `--last N`: 仅基于最近 N 条消息进行统计
-- `--first N`: 仅基于最早 N 条消息进行统计
-- `-o, --output FILE`: 导出排名结果 CSV
-- `--days N`: 统计最近 N 天的数据
+- `--last N`: 仅使用最近 N 条消息
+- `--first N`: 仅使用最早 N 条消息
+- `-o, --output FILE`: 写出排名结果 CSV
+- `--days N`: 仅统计最近 N 天消息
 ```bash
 # 查看最活跃的用户 (默认)
 dykit rank -r 6657 --top 10
@@ -156,16 +156,17 @@ dykit rank -r 6657 --by content --top 10
 
 #### cluster
 使用文本相似度算法对弹幕进行聚类，识别重复模式。
-- `--type TYPE`: 过滤消息类型 (默认 chatmsg)
+- `--type TYPE`: 按消息类型过滤（默认 chatmsg）
 - `--user USERNAME`: 按用户名过滤数据集
 - `--user-id USER_ID`: 按 user_id 过滤数据集
 - `--from YYYY-MM-DD`: 起始日期
 - `--to YYYY-MM-DD`: 结束日期（含当天）
-- `--last N`: 仅基于最近 N 条消息进行聚类
-- `--first N`: 仅基于最早 N 条消息进行聚类
-- `--days N`: 仅基于最近 N 天消息进行聚类
-- `--threshold FLOAT`: 相似度阈值 (默认 0.6)
-- `-o, --output FILE`: 将结果保存到 CSV 文件
+- `--last N`: 仅使用最近 N 条消息
+- `--first N`: 仅使用最早 N 条消息
+- `--days N`: 仅使用最近 N 天消息
+- `--threshold FLOAT`: 设置相似度阈值
+- `--limit N`: 聚类前限制源消息数量
+- `-o, --output FILE`: 输出 CSV 文件（可选）
 ```bash
 dykit cluster -r 6657 --threshold 0.5 --limit 50
 ```
@@ -189,6 +190,17 @@ dykit import data.csv -r 6657
 ```bash
 dykit export -r 6657 -o backup.csv
 ```
+
+### service
+管理 `systemd --user` 服务。
+- `create`: 创建服务
+- `list`: 列出服务
+- `start/stop/restart/reload`: 服务生命周期控制
+- `status`: 查看服务状态
+- `logs`: 查看服务日志
+- `where`: 查看 unit 文件路径
+- `edit`: 编辑 unit 文件
+- `remove`: 删除服务
 
 ---
 
