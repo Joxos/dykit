@@ -50,6 +50,7 @@ packages = [
     "dykit.cli",
     "dykit.cli.commands",
     "dykit.cli.services",
+    "dykit.service",
     "dykit.storage",
     "dykit.collectors",
     "dykit.tools",
