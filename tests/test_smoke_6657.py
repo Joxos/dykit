@@ -9,8 +9,8 @@ import psycopg
 import pytest
 from click.testing import CliRunner
 
-from dytools.cli import cli
-from dytools.cli.common import resolve_room_for_query
+from dykit.cli import cli
+from dykit.cli.common import resolve_room_for_query
 
 
 def _with_search_path(dsn: str, search_path: str) -> str:
@@ -255,7 +255,7 @@ def test_smoke_6657_commands(runner: CliRunner, seeded_smoke_db: str, tmp_path: 
         ],
     )
     assert result_collect_validation.exit_code == 1
-    assert "Cannot use both" in result_collect_validation.output
+    assert "Cannot use --with and --without together" in result_collect_validation.output
 
     result_service_help = runner.invoke(cli, ["service", "--help"])
     assert result_service_help.exit_code == 0

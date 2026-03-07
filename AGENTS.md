@@ -1,4 +1,4 @@
-# AGENTS.md — dytools Repository Guide
+# AGENTS.md — dykit Repository Guide
 
 > For AI coding agents operating in this repository.
 > See also: `.ai/HOW_TO.md` for human-AI collaboration norms (private, not version-controlled).
@@ -7,10 +7,10 @@
 
 ## Project Overview
 
-**dytools** is a Python library and CLI tool for collecting and analyzing Douyu live stream danmu (弹幕/chat) messages. PostgreSQL is the primary storage backend; async WebSocket-based collection.
+**dykit** is a Python library and CLI tool for collecting and analyzing Douyu live stream danmu (弹幕/chat) messages. PostgreSQL is the primary storage backend; async WebSocket-based collection.
 
 - **Version**: 4.0.0 (post-MVP) | **Python**: ≥3.12 (runtime), 3.12 in `.venv`
-- **Entry point**: `dytools` CLI → `dytools/__main__.py`
+- **Entry point**: `dykit` CLI → `dykit/__main__.py`
 - **No tests exist yet** — but test infrastructure is ready (`pytest`, `pytest-asyncio`). Write tests if explicitly requested.
 
 ---
@@ -41,7 +41,7 @@ uv run pytest -v                                             # Verbose output
 uv run pytest -k "pattern"                                   # Run tests matching pattern
 
 # CLI verification
-uv pip install -e . && dytools --help  # Install and verify CLI
+uv pip install -e . && dykit --help  # Install and verify CLI
 ```
 
 ---
@@ -49,7 +49,7 @@ uv pip install -e . && dytools --help  # Install and verify CLI
 ## Project Structure
 
 ```
-dytools/
+dykit/
 ├── __main__.py          # CLI compatibility entry point (exports cli + main)
 ├── cli/
 │   ├── app.py           # Root Click group and command registration
@@ -71,7 +71,7 @@ dytools/
 ├── log.py               # Loguru logger configuration
 ├── collectors/
 │   ├── base.py          # BaseCollector ABC
-│   └── async_.py        # AsyncCollector (primary); heartbeat every 45s via asyncio.Task
+│   └── async_.py        # AsyncCollector (primary); Douyu mrkl heartbeat + idle-timeout reconnect
 ├── storage/
 │   ├── base.py          # StorageHandler ABC (async context manager)
 │   ├── postgres.py      # PostgreSQLStorage — use factory: await PostgreSQLStorage.create(...)
@@ -123,8 +123,8 @@ from typing import Any
 import click
 import psycopg
 
-from dytools.log import logger
-from dytools.storage import PostgreSQLStorage
+from dykit.log import logger
+from dykit.storage import PostgreSQLStorage
 ```
 
 ### Type Annotations
@@ -182,7 +182,7 @@ def rank(dsn: str, room: str, top: int, mode: str = "user") -> list[dict[str, An
 
 - Catch specific exceptions — never bare `except:` or `except Exception` without re-raising or logging
 - CLI commands catch `psycopg.Error` explicitly and call `sys.exit(1)`
-- Use `logger.error(...)` from `dytools.log`; pass `exc_info=True` for debug context
+- Use `logger.error(...)` from `dykit.log`; pass `exc_info=True` for debug context
 - Never swallow exceptions silently with empty `except` blocks
 
 ```python
@@ -203,6 +203,18 @@ except psycopg.Error as e:
 - `StorageHandler` subclasses support `async with` for automatic resource cleanup
 - Storage handlers use async psycopg3 (`AsyncConnection`) — do not use blocking psycopg calls
 - `psycopg` uses `dbname` (not `database`) as the kwarg for `AsyncConnection.connect()`
+
+### Collector Keepalive Contract (Critical)
+
+- For Douyu collection, **do not enable** websockets built-in ping keepalive.
+  - Keep `ping_interval=None` and `ping_timeout=None` in `dykit/collectors/async_.py`.
+- Liveness strategy is:
+  1. protocol heartbeat: send `mrkl` every `WS_DOUYU_HEARTBEAT_SECONDS`
+  2. idle detection: reconnect when no message within `WS_READ_IDLE_TIMEOUT_SECONDS`
+- Rationale: websockets ping/pong can trigger periodic false disconnects on this path (proxy/CDN behavior); Douyu protocol heartbeat is the stable approach.
+- Regression guard tests:
+  - `tests/test_collector_keepalive_contract.py`
+  - These tests must keep passing in refactors.
 
 ### Subprocess Patterns
 

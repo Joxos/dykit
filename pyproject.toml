@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dytools"
+name = "dykit"
 version = "4.0.0"
 description = "Douyu Live Stream Danmu (弹幕) Collector - A modular, async-capable library for collecting chat messages from Douyu live streams."
 readme = "README.md"
@@ -42,17 +42,17 @@ Documentation = "https://github.com/douyu/danmu/blob/main/README.md"
 Issues = "https://github.com/douyu/danmu/issues"
 
 [project.scripts]
-dytools = "dytools.cli.app:cli"
+dykit = "dykit.cli.app:cli"
 
 [tool.setuptools]
 packages = [
-    "dytools",
-    "dytools.cli",
-    "dytools.cli.commands",
-    "dytools.cli.services",
-    "dytools.storage",
-    "dytools.collectors",
-    "dytools.tools",
+    "dykit",
+    "dykit.cli",
+    "dykit.cli.commands",
+    "dykit.cli.services",
+    "dykit.storage",
+    "dykit.collectors",
+    "dykit.tools",
 ]
 
 [tool.ruff]

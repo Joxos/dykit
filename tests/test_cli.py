@@ -9,20 +9,21 @@ import psycopg
 import pytest
 from click.testing import CliRunner
 
-from dytools.cli import cli
+from dykit.cli import cli
 
 VALID_DSN = "host=localhost dbname=test user=u password=p"
 SIMPLE_DSN = "host=x"
 
-PATCH_RESOLVE_ROOM_ANALYSIS = "dytools.cli.commands.analysis_cmd.resolve_room_for_query"
-PATCH_RESOLVE_ROOM_IO = "dytools.cli.commands.io_cmd.resolve_room_for_query"
-PATCH_PG_CREATE = "dytools.cli.commands.collect_cmd.PostgreSQLStorage.create"
-PATCH_ASYNC_COLLECTOR = "dytools.cli.commands.collect_cmd.AsyncCollector"
-PATCH_RANK = "dytools.cli.commands.analysis_cmd.rank.rank"
-PATCH_PRUNE = "dytools.cli.commands.analysis_cmd.prune.prune"
-PATCH_CLUSTER = "dytools.cli.commands.analysis_cmd.cluster.cluster"
-PATCH_SEARCH = "dytools.cli.commands.analysis_cmd.search.search"
-PATCH_CONNECT = "dytools.cli.commands.io_cmd.psycopg.connect"
+PATCH_RESOLVE_ROOM_ANALYSIS = "dykit.cli.commands.analysis_cmd.resolve_room_for_query"
+PATCH_RESOLVE_ROOM_IO = "dykit.cli.commands.io_cmd.resolve_room_for_query"
+PATCH_PG_CREATE = "dykit.cli.commands.collect_cmd.PostgreSQLStorage.create"
+PATCH_ASYNC_COLLECTOR = "dykit.cli.commands.collect_cmd.AsyncCollector"
+PATCH_RANK = "dykit.cli.commands.analysis_cmd.rank.rank"
+PATCH_PRUNE = "dykit.cli.commands.analysis_cmd.prune.prune"
+PATCH_CLUSTER = "dykit.cli.commands.analysis_cmd.cluster.cluster"
+PATCH_SEARCH = "dykit.cli.commands.analysis_cmd.search.search"
+PATCH_CONNECT = "dykit.cli.commands.io_cmd.psycopg.connect"
+PATCH_SERVICECTL = "dykit.service.manager.ServiceManager._systemctl"
 
 
 @pytest.fixture
@@ -115,7 +116,7 @@ class TestCollectCommand:
             ],
         )
         assert result.exit_code == 1
-        assert "Cannot use both" in result.output
+        assert "Cannot use --with and --without together" in result.output
 
     def test_collect_happy_path(self, runner: CliRunner) -> None:
         mock_storage = MagicMock()
@@ -139,24 +140,38 @@ class TestCollectCommand:
 
 class TestRankCommand:
     @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
-    def test_rank_user_and_content_mutex(self, mock_resolve: MagicMock, runner: CliRunner) -> None:
-        result = runner.invoke(
-            cli, ["--dsn", SIMPLE_DSN, "rank", "-r", "6657", "--user", "--content"]
-        )
-        assert result.exit_code == 1
-        assert "Cannot use both" in result.output
+    @patch(PATCH_RANK, return_value=[{"username": "alice", "count": 1}])
+    def test_rank_by_option_happy_path(
+        self, mock_rank: MagicMock, mock_resolve: MagicMock, runner: CliRunner
+    ) -> None:
+        result = runner.invoke(cli, ["--dsn", SIMPLE_DSN, "rank", "-r", "6657", "--by", "user"])
+        assert result.exit_code == 0
+        mock_rank.assert_called_once()
 
     @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(PATCH_RANK, return_value=[{"username": "alice", "count": 42}])
     def test_rank_user_mode_happy_path(
         self, mock_rank: MagicMock, mock_resolve: MagicMock, runner: CliRunner
     ) -> None:
-        result = runner.invoke(cli, ["--dsn", SIMPLE_DSN, "rank", "-r", "6657", "--user"])
+        result = runner.invoke(cli, ["--dsn", SIMPLE_DSN, "rank", "-r", "6657", "--by", "user"])
         assert result.exit_code == 0
         assert "alice" in result.output
         assert "42" in result.output
         mock_resolve.assert_called_once_with("6657")
-        mock_rank.assert_called_once_with(SIMPLE_DSN, "12345", 10, "chatmsg", None, mode="user")
+        mock_rank.assert_called_once_with(
+            SIMPLE_DSN,
+            "12345",
+            top=10,
+            msg_type="chatmsg",
+            days=None,
+            mode="user",
+            username=None,
+            user_id=None,
+            from_date=None,
+            to_date=None,
+            last=None,
+            first=None,
+        )
 
     @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(PATCH_RANK, return_value=[])
@@ -167,7 +182,20 @@ class TestRankCommand:
         assert result.exit_code == 0
         assert "messages found" in result.output
         mock_resolve.assert_called_once_with("6657")
-        mock_rank.assert_called_once_with(SIMPLE_DSN, "12345", 10, "chatmsg", None, mode="user")
+        mock_rank.assert_called_once_with(
+            SIMPLE_DSN,
+            "12345",
+            top=10,
+            msg_type="chatmsg",
+            days=None,
+            mode="user",
+            username=None,
+            user_id=None,
+            from_date=None,
+            to_date=None,
+            last=None,
+            first=None,
+        )
 
     @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(
@@ -184,12 +212,25 @@ class TestRankCommand:
     def test_rank_content_mode_happy_path(
         self, mock_rank: MagicMock, mock_resolve: MagicMock, runner: CliRunner
     ) -> None:
-        result = runner.invoke(cli, ["--dsn", SIMPLE_DSN, "rank", "-r", "6657", "--content"])
+        result = runner.invoke(cli, ["--dsn", SIMPLE_DSN, "rank", "-r", "6657", "--by", "content"])
         assert result.exit_code == 0
         assert "spam message" in result.output
         assert "5" in result.output
         mock_resolve.assert_called_once_with("6657")
-        mock_rank.assert_called_once_with(SIMPLE_DSN, "12345", 10, "chatmsg", None, mode="content")
+        mock_rank.assert_called_once_with(
+            SIMPLE_DSN,
+            "12345",
+            top=10,
+            msg_type="chatmsg",
+            days=None,
+            mode="content",
+            username=None,
+            user_id=None,
+            from_date=None,
+            to_date=None,
+            last=None,
+            first=None,
+        )
 
     @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(PATCH_RANK, side_effect=psycopg.Error("db failed"))
@@ -227,7 +268,64 @@ class TestClusterCommand:
         assert result.exit_code == 0
         assert "No messages found" in result.output
         mock_resolve.assert_called_once_with("6657")
-        mock_cluster.assert_called_once_with(SIMPLE_DSN, "12345", 0.6, "chatmsg", 1000)
+        mock_cluster.assert_called_once_with(
+            SIMPLE_DSN,
+            "12345",
+            threshold=0.6,
+            msg_type="chatmsg",
+            limit=1000,
+            username=None,
+            user_id=None,
+            from_date=None,
+            to_date=None,
+            last=None,
+            first=None,
+            days=None,
+        )
+
+    @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
+    @patch(PATCH_CLUSTER, return_value=[[("abc", 3), ("abd", 2)]])
+    def test_cluster_with_common_filters(
+        self, mock_cluster: MagicMock, mock_resolve: MagicMock, runner: CliRunner
+    ) -> None:
+        result = runner.invoke(
+            cli,
+            [
+                "--dsn",
+                SIMPLE_DSN,
+                "cluster",
+                "-r",
+                "6657",
+                "--type",
+                "chatmsg",
+                "--user",
+                "alice",
+                "--user-id",
+                "uid1",
+                "--from",
+                "2026-03-01",
+                "--to",
+                "2026-03-07",
+                "--last",
+                "50",
+            ],
+        )
+        assert result.exit_code == 0
+        mock_resolve.assert_called_once_with("6657")
+        mock_cluster.assert_called_once_with(
+            SIMPLE_DSN,
+            "12345",
+            threshold=0.6,
+            msg_type="chatmsg",
+            limit=1000,
+            username="alice",
+            user_id="uid1",
+            from_date="2026-03-01",
+            to_date="2026-03-07",
+            last=50,
+            first=None,
+            days=None,
+        )
 
     @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(PATCH_CLUSTER, return_value=[[("hello world", 5), ("hello worlds", 3)]])
@@ -238,7 +336,20 @@ class TestClusterCommand:
         assert result.exit_code == 0
         assert "hello world" in result.output
         mock_resolve.assert_called_once_with("6657")
-        mock_cluster.assert_called_once_with(SIMPLE_DSN, "12345", 0.6, "chatmsg", 1000)
+        mock_cluster.assert_called_once_with(
+            SIMPLE_DSN,
+            "12345",
+            threshold=0.6,
+            msg_type="chatmsg",
+            limit=1000,
+            username=None,
+            user_id=None,
+            from_date=None,
+            to_date=None,
+            last=None,
+            first=None,
+            days=None,
+        )
 
 
 class TestSearchCommand:
@@ -249,7 +360,7 @@ class TestSearchCommand:
             ["--dsn", SIMPLE_DSN, "search", "-r", "6657", "--last", "10", "--first", "10"],
         )
         assert result.exit_code == 1
-        assert "Cannot use both" in result.output
+        assert "Cannot use --last and --first together" in result.output
 
     @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(
@@ -288,6 +399,17 @@ class TestSearchCommand:
         )
 
     @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
+    @patch(PATCH_SEARCH, side_effect=psycopg.Error("db failed"))
+    def test_search_database_error(
+        self, mock_search: MagicMock, mock_resolve: MagicMock, runner: CliRunner
+    ) -> None:
+        result = runner.invoke(cli, ["--dsn", SIMPLE_DSN, "search", "-r", "6657", "-q", "test"])
+        assert result.exit_code == 1
+        assert "Database query failed" in result.output
+        mock_resolve.assert_called_once_with("6657")
+        mock_search.assert_called_once()
+
+    @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
     @patch(PATCH_SEARCH, return_value=[])
     def test_search_no_results(
         self, mock_search: MagicMock, mock_resolve: MagicMock, runner: CliRunner
@@ -309,16 +431,54 @@ class TestSearchCommand:
             first=None,
         )
 
+
+class TestRankCommonFilters:
     @patch(PATCH_RESOLVE_ROOM_ANALYSIS, return_value="12345")
-    @patch(PATCH_SEARCH, side_effect=psycopg.Error("db failed"))
-    def test_search_database_error(
-        self, mock_search: MagicMock, mock_resolve: MagicMock, runner: CliRunner
+    @patch(PATCH_RANK, return_value=[{"username": "alice", "count": 10}])
+    def test_rank_with_common_filters(
+        self, mock_rank: MagicMock, mock_resolve: MagicMock, runner: CliRunner, tmp_path: Path
     ) -> None:
-        result = runner.invoke(cli, ["--dsn", SIMPLE_DSN, "search", "-r", "6657", "-q", "test"])
-        assert result.exit_code == 1
-        assert "Database query failed" in result.output
+        output_file = tmp_path / "rank.csv"
+        result = runner.invoke(
+            cli,
+            [
+                "--dsn",
+                SIMPLE_DSN,
+                "rank",
+                "-r",
+                "6657",
+                "--type",
+                "chatmsg",
+                "--user",
+                "alice",
+                "--user-id",
+                "uid1",
+                "--from",
+                "2026-03-01",
+                "--to",
+                "2026-03-07",
+                "--first",
+                "100",
+                "-o",
+                str(output_file),
+            ],
+        )
+        assert result.exit_code == 0
         mock_resolve.assert_called_once_with("6657")
-        mock_search.assert_called_once()
+        mock_rank.assert_called_once_with(
+            SIMPLE_DSN,
+            "12345",
+            top=10,
+            msg_type="chatmsg",
+            days=None,
+            mode="user",
+            username="alice",
+            user_id="uid1",
+            from_date="2026-03-01",
+            to_date="2026-03-07",
+            last=None,
+            first=100,
+        )
 
 
 class TestImportCommand:
@@ -498,3 +658,39 @@ class TestInitDbCommand:
         mock_connect.assert_called_once_with(SIMPLE_DSN)
         mock_cursor.execute.assert_called_once()
         mock_conn.commit.assert_called_once()
+
+
+class TestServiceReloadCommand:
+    @patch(PATCH_SERVICECTL)
+    def test_reload_happy_path(self, mock_systemctl: MagicMock, runner: CliRunner) -> None:
+        ok = MagicMock()
+        ok.returncode = 0
+        ok.stdout = ""
+        ok.stderr = ""
+        mock_systemctl.side_effect = [ok, ok]
+
+        result = runner.invoke(cli, ["service", "reload", "dykit-6657"])
+
+        assert result.exit_code == 0
+        assert "reloaded" in result.output
+        assert mock_systemctl.call_count == 2
+
+    @patch(PATCH_SERVICECTL)
+    def test_reload_fallback_restart(self, mock_systemctl: MagicMock, runner: CliRunner) -> None:
+        ok = MagicMock()
+        ok.returncode = 0
+        ok.stdout = ""
+        ok.stderr = ""
+
+        fail = MagicMock()
+        fail.returncode = 1
+        fail.stdout = ""
+        fail.stderr = "reload not supported"
+
+        mock_systemctl.side_effect = [ok, fail, ok]
+
+        result = runner.invoke(cli, ["service", "reload", "dykit-6657"])
+
+        assert result.exit_code == 0
+        assert "restarted (reload not supported)" in result.output
+        assert mock_systemctl.call_count == 3

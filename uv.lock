@@ -80,7 +80,7 @@ wheels = [
 ]
 
 [[package]]
-name = "dytools"
+name = "dykit"
 version = "4.0.0"
 source = { editable = "." }
 dependencies = [
