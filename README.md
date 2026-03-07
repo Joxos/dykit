@@ -128,11 +128,10 @@ dykit collect -r 6657 -v
 #### rank
 统计发送消息最多的用户或高频出现的重复弹幕。
 - `-r, --room`: 直播间 ID
-- `-u, --user`: 按用户统计 (默认模式)
-- `-c, --content`: 按内容统计重复弹幕
+- `--by user|content`: 统计维度（默认 user）
 - `--top N`: 显示前 N 名 (默认 10)
 - `--type TYPE`: 过滤消息类型 (默认 chatmsg, 可选 dgb 等)
-- `--username USERNAME`: 按用户名过滤数据集
+- `--user USERNAME`: 按用户名过滤数据集
 - `--user-id USER_ID`: 按 user_id 过滤数据集
 - `--from YYYY-MM-DD`: 起始日期
 - `--to YYYY-MM-DD`: 结束日期（含当天）
@@ -145,17 +144,17 @@ dykit collect -r 6657 -v
 dykit rank -r 6657 --top 10
 
 # 按用户统计送礼榜
-dykit rank -r 6657 --user --type dgb --top 5
+dykit rank -r 6657 --by user --type dgb --top 5
 
 # 查看重复弹幕
-dykit rank -r 6657 --content --top 10
+dykit rank -r 6657 --by content --top 10
 ```
 
 
 #### cluster
 使用文本相似度算法对弹幕进行聚类，识别重复模式。
 - `--type TYPE`: 过滤消息类型 (默认 chatmsg)
-- `--username USERNAME`: 按用户名过滤数据集
+- `--user USERNAME`: 按用户名过滤数据集
 - `--user-id USER_ID`: 按 user_id 过滤数据集
 - `--from YYYY-MM-DD`: 起始日期
 - `--to YYYY-MM-DD`: 结束日期（含当天）

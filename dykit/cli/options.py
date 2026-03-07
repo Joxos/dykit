@@ -101,13 +101,6 @@ def validate_with_without(msg_types_include: str | None, msg_types_exclude: str 
     )
 
 
-def validate_user_content(user: bool, content_mode: bool) -> None:
-    from dykit.cli.common import fail
-
-    if user and content_mode:
-        fail("Cannot use both --user and --content")
-
-
 def validate_last_first(last: int | None, first: int | None) -> None:
     from dykit.cli.common import ensure_mutually_exclusive
 
