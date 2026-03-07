@@ -21,6 +21,14 @@ from dytools.cli.options import (
     validate_last_first,
     validate_user_content,
 )
+from dytools.cli.services.analysis_flow import (
+    run_cluster,
+    run_prune,
+    run_rank,
+    run_search,
+    summarize_search_filter,
+    summarize_search_sort,
+)
 from dytools.cli.services.dbio import export_clusters_to_csv, export_search_results_to_csv
 
 
@@ -54,8 +62,16 @@ def register(cli: click.Group) -> None:
 
         mode = "content" if content_mode else "user"
         try:
-            resolved_room = main_module.resolve_room_for_query(room)
-            results = main_module.rank.rank(dsn, resolved_room, top, msg_type, days, mode=mode)
+            results = run_rank(
+                main_module.rank,
+                main_module.resolve_room_for_query,
+                dsn,
+                room,
+                top,
+                msg_type,
+                days,
+                mode,
+            )
             if not results:
                 click.echo(f"No {msg_type} messages found for room {room}")
                 return
@@ -75,8 +91,9 @@ def register(cli: click.Group) -> None:
 
         dsn = get_dsn(ctx)
         try:
-            resolved_room = main_module.resolve_room_for_query(room)
-            removed_count = main_module.prune.prune(dsn, resolved_room)
+            removed_count = run_prune(
+                main_module.prune, main_module.resolve_room_for_query, dsn, room
+            )
             click.echo(f"Removed {removed_count} duplicate records from room {room}")
         except main_module.psycopg.Error as e:
             click.echo(f"Error: Database operation failed: {e}", err=True)
@@ -101,9 +118,13 @@ def register(cli: click.Group) -> None:
 
         dsn = get_dsn(ctx)
         try:
-            resolved_room = main_module.resolve_room_for_query(room)
-            all_clusters = main_module.cluster.cluster(
-                dsn, resolved_room, threshold, "chatmsg", limit
+            all_clusters = run_cluster(
+                main_module.cluster,
+                main_module.resolve_room_for_query,
+                dsn,
+                room,
+                threshold,
+                limit,
             )
             if not all_clusters:
                 click.echo(f"No messages found in room {room}")
@@ -160,40 +181,26 @@ def register(cli: click.Group) -> None:
         validate_last_first(last, first)
 
         try:
-            resolved_room = main_module.resolve_room_for_query(room)
-            results = main_module.search.search(
+            results = run_search(
+                main_module.search,
+                main_module.resolve_room_for_query,
                 dsn,
-                resolved_room,
-                query=query,
-                username=user,
-                user_id=user_id,
-                msg_type=msg_type,
-                from_date=from_date,
-                to_date=to_date,
-                last=last,
-                first=first,
+                room,
+                query,
+                user,
+                user_id,
+                msg_type,
+                from_date,
+                to_date,
+                last,
+                first,
             )
             if not results:
                 click.echo(f"No messages found for room {room}")
                 return
 
-            search_desc: list[str] = []
-            if query:
-                search_desc.append(f'query="{query}"')
-            if user:
-                search_desc.append(f'user="{user}"')
-            if user_id:
-                search_desc.append(f'user_id="{user_id}"')
-            if msg_type:
-                search_desc.append(f'type="{msg_type}"')
-            search_str = ", ".join(search_desc) if search_desc else "all"
-
-            if last:
-                sort_mode = f"Last {last}"
-            elif first:
-                sort_mode = f"First {first}"
-            else:
-                sort_mode = "Last 100 (default)"
+            search_str = summarize_search_filter(query, user, user_id, msg_type)
+            sort_mode = summarize_search_sort(last, first)
 
             show_search_results(results, room, search_str, sort_mode)
 
