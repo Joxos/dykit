@@ -34,7 +34,7 @@ htmlcov/
 *.csv
 .ai/
 .sisyphus/
-uv.lock
+backups/
 
 # OS
 .DS_Store
