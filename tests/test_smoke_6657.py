@@ -379,6 +379,7 @@ def test_smoke_dycap_cli_console(
     result = runner.invoke(collect, ["--storage", "console", "-r", "6657"])
     assert result.exit_code == 0, result.output
     assert "dycap-cli-smoke" in result.output
+    assert "[6657]" in result.output
 
 
 @pytest.mark.smoke

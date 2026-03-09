@@ -34,6 +34,7 @@ from .constants import (
     WS_READ_IDLE_TIMEOUT_SECONDS,
     WS_RECOVERY_BACKOFF_SECONDS,
 )
+from .render import render_message_text
 from .storage import StorageHandler
 from .types import DanmuMessage
 
@@ -62,6 +63,16 @@ CHAT_FIELD_MAP: dict[MessageType, tuple[str, str]] = {
     MessageType.RNEWBC: ("续费了{nl}级贵族", "rnewbc"),
     MessageType.BLAB: ("粉丝牌《{bnn}》升级至{bl}级", "blab"),
     MessageType.UPGRADE: ("升级到{user_level}级", "upgrade"),
+}
+
+MSG_TYPE_LABELS: dict[str, str] = {
+    "chatmsg": "弹幕",
+    "dgb": "礼物",
+    "uenter": "进场",
+    "anbc": "开通贵族",
+    "rnewbc": "续费贵族",
+    "blab": "粉丝牌升级",
+    "upgrade": "等级升级",
 }
 
 
@@ -360,6 +371,10 @@ class AsyncCollector:
         if self.message_callback is not None:
             self.message_callback(danmu_message)
 
+    @staticmethod
+    def render_message_text(message: DanmuMessage) -> str:
+        return render_message_text(message)
+
     def _build_danmu_message(self, msg_dict: dict[str, str], msg_type: MessageType) -> DanmuMessage:
         """Build DanmuMessage from raw dict."""
         # Extract common fields
@@ -367,56 +382,41 @@ class AsyncCollector:
         level = msg_dict.get("level", "0")
         uid = msg_dict.get("uid", "0")
 
-        # Build message based on type
-        msg = DanmuMessage(
-            timestamp=datetime.now(),
-            room_id=str(self._real_room_id),
-            msg_type=msg_type,
-            user_id=uid or None,
-            username=nickname or None,
-            user_level=int(level) if level.isdigit() else None,
-            raw_data=msg_dict,
-        )
+        payload: dict[str, Any] = {
+            "timestamp": datetime.now(),
+            "room_id": str(self._real_room_id),
+            "msg_type": msg_type,
+            "user_id": uid or None,
+            "username": nickname or None,
+            "user_level": int(level) if level.isdigit() else None,
+            "raw_data": msg_dict,
+        }
 
-        # Type-specific fields
         if msg_type in (MessageType.DGB, MessageType.ANBC, MessageType.RNEWBC):
-            msg = DanmuMessage(
-                timestamp=msg.timestamp,
-                room_id=msg.room_id,
-                msg_type=msg.msg_type,
-                user_id=msg.user_id,
-                username=msg.username,
-                user_level=msg.user_level,
-                gift_id=msg_dict.get("gfid"),
-                gift_count=int(gfcnt) if (gfcnt := msg_dict.get("gfcnt", "")).isdigit() else None,
-                gift_name=msg_dict.get("gfn") or msg_dict.get("gftype"),
-                noble_level=int(msg_dict.get("nl", "0")) or None,
-                raw_data=msg_dict,
+            payload.update(
+                {
+                    "gift_id": msg_dict.get("gfid"),
+                    "gift_count": int(gfcnt)
+                    if (gfcnt := msg_dict.get("gfcnt", "")).isdigit()
+                    else None,
+                    "gift_name": msg_dict.get("gfn") or msg_dict.get("gftype"),
+                    "noble_level": int(msg_dict.get("nl", "0")) or None,
+                }
             )
         elif msg_type == MessageType.UENTER:
-            msg = DanmuMessage(
-                timestamp=msg.timestamp,
-                room_id=msg.room_id,
-                msg_type=msg.msg_type,
-                user_id=msg.user_id,
-                username=msg.username,
-                user_level=msg.user_level,
-                badge_level=int(msg_dict.get("bl", "0")) or None,
-                badge_name=msg_dict.get("bnn"),
-                avatar_url=msg_dict.get("ic") or msg_dict.get("av"),
-                raw_data=msg_dict,
+            payload.update(
+                {
+                    "badge_level": int(msg_dict.get("bl", "0")) or None,
+                    "badge_name": msg_dict.get("bnn"),
+                    "avatar_url": msg_dict.get("ic") or msg_dict.get("av"),
+                }
             )
         elif msg_type == MessageType.BLAB:
-            msg = DanmuMessage(
-                timestamp=msg.timestamp,
-                room_id=msg.room_id,
-                msg_type=msg.msg_type,
-                user_id=msg.user_id,
-                username=msg.username,
-                user_level=msg.user_level,
-                badge_level=int(msg_dict.get("bl", "0")) or None,
-                badge_name=msg_dict.get("bnn"),
-                raw_data=msg_dict,
+            payload.update(
+                {
+                    "badge_level": int(msg_dict.get("bl", "0")) or None,
+                    "badge_name": msg_dict.get("bnn"),
+                }
             )
 
-        return msg
+        return DanmuMessage(**payload)

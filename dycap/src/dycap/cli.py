@@ -3,20 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 from datetime import datetime
 
 import click
+from dycommon.env import get_dsn
 
-from .collector import MSG_TYPE_TO_ENUM, AsyncCollector
+from .collector import MSG_TYPE_LABELS, MSG_TYPE_TO_ENUM, AsyncCollector
+from .render import render_message_text
 from .storage import ConsoleStorage, CSVStorage, PostgreSQLStorageFromDSN
 from .types import DanmuMessage
-
-
-def get_dsn() -> str | None:
-    """Get DSN from environment or --dsn option."""
-    return os.environ.get("DYKIT_DSN") or os.environ.get("DYCAP_DSN")
 
 
 @click.command()
@@ -36,7 +32,11 @@ def get_dsn() -> str | None:
     default=None,
     help=(
         "Filter to only these message types (comma-separated). "
-        f"Available: {', '.join(sorted(MSG_TYPE_TO_ENUM.keys()))}. "
+        "Available: "
+        + ", ".join(
+            f"{key}（{MSG_TYPE_LABELS.get(key, key)}）" for key in sorted(MSG_TYPE_TO_ENUM.keys())
+        )
+        + ". "
         "Example: --with chatmsg,dgb,uenter"
     ),
 )
@@ -46,7 +46,11 @@ def get_dsn() -> str | None:
     default=None,
     help=(
         "Filter out these message types (comma-separated). "
-        f"Available: {', '.join(sorted(MSG_TYPE_TO_ENUM.keys()))}. "
+        "Available: "
+        + ", ".join(
+            f"{key}（{MSG_TYPE_LABELS.get(key, key)}）" for key in sorted(MSG_TYPE_TO_ENUM.keys())
+        )
+        + ". "
         "Example: --without uenter"
     ),
 )
@@ -98,9 +102,7 @@ def collect(
         last_message_at = message.timestamp
 
         if storage != "console":
-            username = message.username or "Unknown"
-            text = message.content or message.msg_type.value
-            click.echo(f"[{message.room_id}] {username}: {text}")
+            click.echo(f"[{message.room_id}] {render_message_text(message)}")
 
     async def run() -> None:
         # Create storage
