@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from datetime import datetime
+from importlib.metadata import version
 
 import click
 from dycommon.env import get_dsn
@@ -17,6 +18,7 @@ from .types import DanmuMessage
 
 
 @click.command()
+@click.version_option(version=version("dycap"), prog_name="dycap")
 @click.option("-r", "--room", required=True, help="Room ID to collect")
 @click.option("--dsn", help="PostgreSQL DSN (or use DYKIT_DSN env)")
 @click.option(

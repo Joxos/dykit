@@ -14,6 +14,9 @@ pip install dystat
 # Set DSN
 export DYKIT_DSN="postgresql://user:pass@localhost:5432/douyu"
 
+# Show version
+dystat --version
+
 # Rank users by message count
 dystat rank -r 6657 --top 10
 

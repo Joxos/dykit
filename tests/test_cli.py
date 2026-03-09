@@ -74,6 +74,11 @@ class TestMissingDsn:
 
 
 class TestCollectCommand:
+    def test_collect_version_option(self, runner: CliRunner) -> None:
+        result = runner.invoke(collect, ["--version"])
+        assert result.exit_code == 0
+        assert "dycap" in result.output
+
     def test_collect_help_shows_human_labels(self, runner: CliRunner) -> None:
         result = runner.invoke(collect, ["--help"])
         assert result.exit_code == 0
@@ -455,3 +460,10 @@ class TestSearchCommand:
         mock_search.assert_called_once_with(
             "6657", None, None, None, None, None, None, 12, None, SIMPLE_DSN
         )
+
+
+class TestVersionOptions:
+    def test_dystat_version_option(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["--version"])
+        assert result.exit_code == 0
+        assert "dystat" in result.output

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from importlib.metadata import version
 
 import click
 from dycommon.env import get_dsn
@@ -253,6 +254,7 @@ def prune(room: str, dsn: str | None) -> None:
 
 # Main group
 @click.group()
+@click.version_option(version=version("dystat"), prog_name="dystat")
 def cli() -> None:
     """Douyu Statistics Tools - analyze danmu data."""
     pass

@@ -22,6 +22,9 @@ dycap collect -r 6657 --storage csv -o backup.csv
 
 # Collect to console
 dycap collect -r 6657 --storage console
+
+# Show version
+dycap --version
 ```
 
 ### Python API

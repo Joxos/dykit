@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dystat"
-version = "0.1.1"
+version = "0.1.2"
 description = "Douyu Statistics Tools - analyze danmu data with rank, cluster, search, and prune."
 readme = "README.md"
 requires-python = ">=3.12"
