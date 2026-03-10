@@ -83,11 +83,18 @@ jobs:
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
+          import urllib.error
           import urllib.request
 
           version = "${{ steps.versions.outputs.dyproto }}"
-          with urllib.request.urlopen("https://pypi.org/pypi/dyproto/json", timeout=20) as r:
-              data = json.load(r)
+          try:
+              with urllib.request.urlopen("https://pypi.org/pypi/dyproto/json", timeout=20) as r:
+                  data = json.load(r)
+          except urllib.error.HTTPError as exc:
+              if exc.code == 404:
+                  data = {"releases": {}}
+              else:
+                  raise
           print(f"exists={'true' if version in data.get('releases', {}) else 'false'}")
           PY
 
@@ -111,11 +118,18 @@ jobs:
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
+          import urllib.error
           import urllib.request
 
           version = "${{ steps.versions.outputs.dycommon }}"
-          with urllib.request.urlopen("https://pypi.org/pypi/dycommon/json", timeout=20) as r:
-              data = json.load(r)
+          try:
+              with urllib.request.urlopen("https://pypi.org/pypi/dycommon/json", timeout=20) as r:
+                  data = json.load(r)
+          except urllib.error.HTTPError as exc:
+              if exc.code == 404:
+                  data = {"releases": {}}
+              else:
+                  raise
           print(f"exists={'true' if version in data.get('releases', {}) else 'false'}")
           PY
 
@@ -139,11 +153,18 @@ jobs:
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
+          import urllib.error
           import urllib.request
 
           version = "${{ steps.versions.outputs.dycap }}"
-          with urllib.request.urlopen("https://pypi.org/pypi/dycap/json", timeout=20) as r:
-              data = json.load(r)
+          try:
+              with urllib.request.urlopen("https://pypi.org/pypi/dycap/json", timeout=20) as r:
+                  data = json.load(r)
+          except urllib.error.HTTPError as exc:
+              if exc.code == 404:
+                  data = {"releases": {}}
+              else:
+                  raise
           print(f"exists={'true' if version in data.get('releases', {}) else 'false'}")
           PY
 
@@ -167,11 +188,18 @@ jobs:
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
+          import urllib.error
           import urllib.request
 
           version = "${{ steps.versions.outputs.dystat }}"
-          with urllib.request.urlopen("https://pypi.org/pypi/dystat/json", timeout=20) as r:
-              data = json.load(r)
+          try:
+              with urllib.request.urlopen("https://pypi.org/pypi/dystat/json", timeout=20) as r:
+                  data = json.load(r)
+          except urllib.error.HTTPError as exc:
+              if exc.code == 404:
+                  data = {"releases": {}}
+              else:
+                  raise
           print(f"exists={'true' if version in data.get('releases', {}) else 'false'}")
           PY
 
@@ -195,11 +223,18 @@ jobs:
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
+          import urllib.error
           import urllib.request
 
           version = "${{ steps.versions.outputs.dykit }}"
-          with urllib.request.urlopen("https://pypi.org/pypi/dykit/json", timeout=20) as r:
-              data = json.load(r)
+          try:
+              with urllib.request.urlopen("https://pypi.org/pypi/dykit/json", timeout=20) as r:
+                  data = json.load(r)
+          except urllib.error.HTTPError as exc:
+              if exc.code == 404:
+                  data = {"releases": {}}
+              else:
+                  raise
           print(f"exists={'true' if version in data.get('releases', {}) else 'false'}")
           PY
 
