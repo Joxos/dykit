@@ -8,7 +8,6 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import psycopg
 import pytest
-from click.testing import CliRunner
 from dycap.cli import collect
 from dycap.collector import AsyncCollector
 from dycap.storage import ConsoleStorage, CSVStorage, PostgreSQLStorageFromDSN
@@ -16,6 +15,8 @@ from dycap.types import DanmuMessage
 from dystat.cli import cli
 
 from dyproto import MessageType
+
+from .cli_test_runner import CliRunner
 
 
 def _with_search_path(dsn: str, search_path: str) -> str:
@@ -32,11 +33,6 @@ def smoke_dsn() -> str:
     if not base_dsn:
         pytest.skip("DYKIT_DSN is not set; skip real-db smoke tests")
     return _with_search_path(base_dsn, "smoke,public")
-
-
-@pytest.fixture
-def runner() -> CliRunner:
-    return CliRunner()
 
 
 @pytest.fixture

@@ -5,10 +5,11 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import psycopg
 import pytest
-from click.testing import CliRunner
 from dycap.cli import collect
 from dystat.cli import cli
 from dystat.rank import run_rank
+
+from .cli_test_runner import CliRunner
 
 VALID_DSN = "host=localhost dbname=test user=u password=p"
 SIMPLE_DSN = "host=x"
@@ -18,11 +19,6 @@ PATCH_ASYNC_COLLECTOR = "dycap.cli.AsyncCollector"
 PATCH_RANK = "dystat.cli.run_rank"
 PATCH_CLUSTER = "dystat.cli.run_cluster"
 PATCH_SEARCH = "dystat.cli.run_search"
-
-
-@pytest.fixture
-def runner() -> CliRunner:
-    return CliRunner()
 
 
 def _assert_dycap_missing_dsn(
