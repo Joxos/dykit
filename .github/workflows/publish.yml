@@ -109,6 +109,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/dyproto/
+          attestations: false
 
       - name: Wait for dyproto visibility on PyPI
         run: python .github/scripts/wait_pypi.py dyproto "${{ steps.versions.outputs.dyproto }}"
@@ -144,6 +145,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/dycommon/
+          attestations: false
 
       - name: Wait for dycommon visibility on PyPI
         run: python .github/scripts/wait_pypi.py dycommon "${{ steps.versions.outputs.dycommon }}"
@@ -179,6 +181,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/dycap/
+          attestations: false
 
       - name: Wait for dycap visibility on PyPI
         run: python .github/scripts/wait_pypi.py dycap "${{ steps.versions.outputs.dycap }}"
@@ -214,6 +217,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/dystat/
+          attestations: false
 
       - name: Wait for dystat visibility on PyPI
         run: python .github/scripts/wait_pypi.py dystat "${{ steps.versions.outputs.dystat }}"
@@ -249,3 +253,4 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/dykit/
+          attestations: false
