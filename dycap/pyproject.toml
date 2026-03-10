@@ -18,14 +18,14 @@ dependencies = [
     "dyproto[discovery]>=0.1.0",
     "websockets>=12.0",
     "psycopg[binary]>=3.0.0",
-    "click>=8",
+    "cyclopts",
     "rich>=14.0.0",
     "loguru>=0.7.0",
     "tenacity>=9.1.2",
 ]
 
 [project.scripts]
-dycap = "dycap.cli:collect"
+dycap = "dycap.cli:main"
 
 [tool.uv.sources]
 dycommon = { workspace = true }
@@ -33,7 +33,6 @@ dyproto = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
 
 [tool.ruff]
 line-length = 100
