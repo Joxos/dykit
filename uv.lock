@@ -170,7 +170,7 @@ requires-dist = [{ name = "dyproto", extras = ["discovery"], editable = "dyproto
 
 [[package]]
 name = "dykit"
-version = "5.0.2"
+version = "5.0.5"
 source = { editable = "." }
 dependencies = [
     { name = "dycap" },
