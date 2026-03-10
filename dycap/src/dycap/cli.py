@@ -10,10 +10,12 @@ from typing import Annotated, Literal
 from cyclopts import App, Group, Parameter
 from cyclopts.argument import ArgumentCollection
 from dycommon.env import get_dsn
+from dycommon.room import resolve_room
 from loguru import logger
+from rich.console import Console
 
 from .collector import MSG_TYPE_LABELS, MSG_TYPE_TO_ENUM, AsyncCollector
-from .render import render_message_text
+from .render import render_console_line
 from .storage import ConsoleStorage, CSVStorage, PostgreSQLStorageFromDSN
 from .types import DanmuMessage
 
@@ -46,6 +48,7 @@ _WITH_WITHOUT_GROUP = Group(show=False, validator=_validate_with_without)
 _CSV_OUTPUT_GROUP = Group(show=False, validator=_validate_csv_output)
 
 app = App(name="dycap", version=lambda: f"dycap {version('dycap')}")
+console = Console()
 
 
 @app.default
@@ -104,6 +107,14 @@ async def collect(
     ] = None,
 ) -> None:
     """Collect danmu messages from a Douyu room."""
+    room_display = room
+    try:
+        resolved_room = resolve_room(room)
+        if resolved_room != room:
+            room_display = f"{room}/{resolved_room}"
+    except Exception:
+        room_display = room
+
     dsn = dsn or get_dsn("DYCAP_DSN")
 
     if verbose:
@@ -138,7 +149,7 @@ async def collect(
         last_message_at = message.timestamp
 
         if storage != "console":
-            print(f"[{message.room_id}] {render_message_text(message)}")
+            console.print(render_console_line(message, room_display=room_display))
 
     match storage:
         case "postgres":
@@ -159,7 +170,7 @@ async def collect(
             message_callback=message_callback,
         )
 
-        print(f"Collecting from room {room}... Press Ctrl+C to stop.")
+        print(f"Collecting from room {room_display}... Press Ctrl+C to stop.")
 
         try:
             await collector.connect()
