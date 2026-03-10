@@ -16,7 +16,6 @@ SIMPLE_DSN = "host=x"
 PATCH_PG_CREATE = "dycap.cli.PostgreSQLStorageFromDSN.create"
 PATCH_ASYNC_COLLECTOR = "dycap.cli.AsyncCollector"
 PATCH_RANK = "dystat.cli.run_rank"
-PATCH_PRUNE = "dystat.cli.run_prune"
 PATCH_CLUSTER = "dystat.cli.run_cluster"
 PATCH_SEARCH = "dystat.cli.run_search"
 
@@ -62,7 +61,6 @@ class TestMissingDsn:
         "args",
         [
             ["rank", "-r", "6657"],
-            ["prune", "-r", "6657"],
             ["cluster", "-r", "6657"],
             ["search", "-r", "6657"],
         ],
@@ -280,16 +278,6 @@ class TestRankCommand:
             None,
             SIMPLE_DSN,
         )
-
-
-class TestPruneCommand:
-    @patch(PATCH_PRUNE, return_value=3)
-    def test_prune_happy_path(self, mock_prune: MagicMock, runner: CliRunner) -> None:
-        result = runner.invoke(cli, ["prune", "--dsn", SIMPLE_DSN, "-r", "6657"])
-        assert result.exit_code == 0
-        assert "3" in result.output
-        assert "duplicate" in result.output
-        mock_prune.assert_called_once_with("6657", SIMPLE_DSN)
 
 
 class TestClusterCommand:

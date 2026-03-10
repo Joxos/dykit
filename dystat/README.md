@@ -1,6 +1,6 @@
 # dystat
 
-Douyu Statistics Tools - analyze danmu data with rank, cluster, search, and prune.
+Douyu Statistics Tools - analyze danmu data with rank, cluster, and search.
 
 ## Installation
 
@@ -30,8 +30,7 @@ dystat cluster -r 6657 --threshold 0.5
 dystat search -r 6657 --content "hello"
 dystat search -r 6657 --user "username"
 
-# Remove duplicates
-dystat prune -r 6657
+
 ```
 
 ## Commands
@@ -98,17 +97,6 @@ Options:
 - `--to TIME` - End time (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM:SS`, inclusive)
 - `--last N` - Return latest N messages (default window size: 100 when `--first/--last` omitted)
 - `--first N` - Return earliest N messages
-
-### prune
-
-Remove duplicate messages.
-
-```bash
-dystat prune -r 6657
-```
-
-Options:
-- `-r, --room ROOM` - Room ID (required)
 
 ## Environment Variables
 

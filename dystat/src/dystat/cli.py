@@ -2,54 +2,54 @@
 
 from __future__ import annotations
 
-import sys
 from importlib.metadata import version
+from typing import Annotated, Literal
 
-import click
+from cyclopts import App, Parameter
 from dycommon.env import get_dsn
 from rich.console import Console
 from rich.table import Table
 
 from .cluster import run_cluster
-from .prune import run_prune
 from .rank import run_rank
 from .search import run_search
 
 console = Console()
+app = App(name="dystat", version=lambda: f"dystat {version('dystat')}")
 
 
-@click.command()
-@click.option("-r", "--room", required=True, help="Room ID")
-@click.option("--dsn", help="PostgreSQL DSN (or use DYKIT_DSN env)")
-@click.option("--top", default=10, help="Number of results")
-@click.option(
-    "--by",
-    "mode",
-    type=click.Choice(["user", "content"]),
-    default="user",
-    help="Rank by user or content",
-)
-@click.option("--type", "msg_type", default="chatmsg", help="Message type")
-@click.option("--days", type=int, help="Limit to recent N days")
-@click.option("--username", help="Filter by username")
-@click.option("--user-id", help="Filter by user_id")
-@click.option("--from", "from_date", help="Start time (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)")
-@click.option("--to", "to_date", help="End time (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS, inclusive)")
-@click.option("--last", type=int, help="Use the last N (most recent) messages")
-@click.option("--first", type=int, help="Use the first N (earliest) messages")
+@app.command
 def rank(
-    room: str,
-    dsn: str | None,
-    top: int,
-    mode: str,
-    msg_type: str,
-    days: int | None,
-    username: str | None,
-    user_id: str | None,
-    from_date: str | None,
-    to_date: str | None,
-    last: int | None,
-    first: int | None,
+    room: Annotated[str, Parameter(name=("-r", "--room"), help="Room ID")],
+    dsn: Annotated[
+        str | None,
+        Parameter(name="--dsn", help="PostgreSQL DSN (or use DYKIT_DSN env)"),
+    ] = None,
+    top: Annotated[int, Parameter(name="--top", help="Number of results")] = 10,
+    mode: Annotated[
+        Literal["user", "content"],
+        Parameter(name="--by", help="Rank by user or content"),
+    ] = "user",
+    msg_type: Annotated[str, Parameter(name="--type", help="Message type")] = "chatmsg",
+    days: Annotated[int | None, Parameter(name="--days", help="Limit to recent N days")] = None,
+    username: Annotated[str | None, Parameter(name="--username", help="Filter by username")] = None,
+    user_id: Annotated[str | None, Parameter(name="--user-id", help="Filter by user_id")] = None,
+    from_date: Annotated[
+        str | None,
+        Parameter(name="--from", help="Start time (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)"),
+    ] = None,
+    to_date: Annotated[
+        str | None,
+        Parameter(name="--to", help="End time (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS, inclusive)"),
+    ] = None,
+    last: Annotated[
+        int | None,
+        Parameter(name="--last", help="Use the last N (most recent) messages"),
+    ] = None,
+    first: Annotated[
+        int | None,
+        Parameter(name="--first", help="Use the first N (earliest) messages"),
+    ] = None,
 ) -> None:
     """Rank users or content by frequency.
 
@@ -58,10 +58,10 @@ def rank(
         dystat rank -r 6657 --by content --top 5
         dystat rank -r 6657 --type dgb --top 5
     """
-    dsn = dsn or get_dsn()
+    dsn = dsn or get_dsn("DYSTAT_DSN")
     if not dsn:
         console.print("[red]Error: DSN required. Set DYKIT_DSN or use --dsn[/red]")
-        sys.exit(1)
+        raise SystemExit(1)
 
     try:
         results = run_rank(
@@ -80,7 +80,7 @@ def rank(
         )
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        sys.exit(1)
+        raise SystemExit(1) from e
 
     # Display table
     table = Table(title=f"Top {mode}s in room {room}")
@@ -94,42 +94,48 @@ def rank(
     console.print(table)
 
 
-@click.command()
-@click.option("-r", "--room", required=True, help="Room ID")
-@click.option("--dsn", help="PostgreSQL DSN (or use DYKIT_DSN env)")
-@click.option("--threshold", default=0.5, help="Similarity threshold (0-1)")
-@click.option("--limit", default=50, help="Source message limit")
-@click.option("--type", "msg_type", default="chatmsg", help="Message type")
-@click.option("--username", help="Filter by username")
-@click.option("--user-id", help="Filter by user_id")
-@click.option("--from", "from_date", help="Start time (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)")
-@click.option("--to", "to_date", help="End time (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS, inclusive)")
-@click.option("--last", type=int, help="Use the last N (most recent) messages")
-@click.option("--first", type=int, help="Use the first N (earliest) messages")
-@click.option("--days", type=int, help="Limit to recent N days")
+@app.command
 def cluster(
-    room: str,
-    dsn: str | None,
-    threshold: float,
-    limit: int,
-    msg_type: str,
-    username: str | None,
-    user_id: str | None,
-    from_date: str | None,
-    to_date: str | None,
-    last: int | None,
-    first: int | None,
-    days: int | None,
+    room: Annotated[str, Parameter(name=("-r", "--room"), help="Room ID")],
+    dsn: Annotated[
+        str | None,
+        Parameter(name="--dsn", help="PostgreSQL DSN (or use DYKIT_DSN env)"),
+    ] = None,
+    threshold: Annotated[
+        float,
+        Parameter(name="--threshold", help="Similarity threshold (0-1)"),
+    ] = 0.5,
+    limit: Annotated[int, Parameter(name="--limit", help="Source message limit")] = 50,
+    msg_type: Annotated[str, Parameter(name="--type", help="Message type")] = "chatmsg",
+    username: Annotated[str | None, Parameter(name="--username", help="Filter by username")] = None,
+    user_id: Annotated[str | None, Parameter(name="--user-id", help="Filter by user_id")] = None,
+    from_date: Annotated[
+        str | None,
+        Parameter(name="--from", help="Start time (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)"),
+    ] = None,
+    to_date: Annotated[
+        str | None,
+        Parameter(name="--to", help="End time (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS, inclusive)"),
+    ] = None,
+    last: Annotated[
+        int | None,
+        Parameter(name="--last", help="Use the last N (most recent) messages"),
+    ] = None,
+    first: Annotated[
+        int | None,
+        Parameter(name="--first", help="Use the first N (earliest) messages"),
+    ] = None,
+    days: Annotated[int | None, Parameter(name="--days", help="Limit to recent N days")] = None,
 ) -> None:
     """Cluster similar messages.
 
     Examples:
         dystat cluster -r 6657 --threshold 0.5
     """
-    dsn = dsn or get_dsn()
+    dsn = dsn or get_dsn("DYSTAT_DSN")
     if not dsn:
         console.print("[red]Error: DSN required. Set DYKIT_DSN or use --dsn[/red]")
-        sys.exit(1)
+        raise SystemExit(1)
 
     try:
         results = run_cluster(
@@ -148,7 +154,7 @@ def cluster(
         )
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        sys.exit(1)
+        raise SystemExit(1) from e
 
     console.print(f"[bold]Found {len(results)} clusters[/bold]\n")
 
@@ -161,28 +167,29 @@ def cluster(
         console.print()
 
 
-@click.command()
-@click.option("-r", "--room", required=True, help="Room ID")
-@click.option("--dsn", help="PostgreSQL DSN (or use DYKIT_DSN env)")
-@click.option("--content", help="Search content (ILIKE)")
-@click.option("--user", "username", help="Filter by username")
-@click.option("--user-id", help="Filter by user ID")
-@click.option("--type", "msg_type", help="Filter by message type")
-@click.option("--from", "from_time", help="From timestamp (ISO)")
-@click.option("--to", "to_time", help="To timestamp (ISO)")
-@click.option("--last", type=int, help="Use the last N (most recent) messages")
-@click.option("--first", type=int, help="Use the first N (earliest) messages")
+@app.command
 def search(
-    room: str,
-    dsn: str | None,
-    content: str | None,
-    username: str | None,
-    user_id: str | None,
-    msg_type: str | None,
-    from_time: str | None,
-    to_time: str | None,
-    last: int | None,
-    first: int | None,
+    room: Annotated[str, Parameter(name=("-r", "--room"), help="Room ID")],
+    dsn: Annotated[
+        str | None,
+        Parameter(name="--dsn", help="PostgreSQL DSN (or use DYKIT_DSN env)"),
+    ] = None,
+    content: Annotated[
+        str | None, Parameter(name="--content", help="Search content (ILIKE)")
+    ] = None,
+    username: Annotated[str | None, Parameter(name="--user", help="Filter by username")] = None,
+    user_id: Annotated[str | None, Parameter(name="--user-id", help="Filter by user ID")] = None,
+    msg_type: Annotated[str | None, Parameter(name="--type", help="Filter by message type")] = None,
+    from_time: Annotated[str | None, Parameter(name="--from", help="From timestamp (ISO)")] = None,
+    to_time: Annotated[str | None, Parameter(name="--to", help="To timestamp (ISO)")] = None,
+    last: Annotated[
+        int | None,
+        Parameter(name="--last", help="Use the last N (most recent) messages"),
+    ] = None,
+    first: Annotated[
+        int | None,
+        Parameter(name="--first", help="Use the first N (earliest) messages"),
+    ] = None,
 ) -> None:
     """Search messages with filters.
 
@@ -190,10 +197,10 @@ def search(
         dystat search -r 6657 --content "hello"
         dystat search -r 6657 --user "张三"
     """
-    dsn = dsn or get_dsn()
+    dsn = dsn or get_dsn("DYSTAT_DSN")
     if not dsn:
         console.print("[red]Error: DSN required. Set DYKIT_DSN or use --dsn[/red]")
-        sys.exit(1)
+        raise SystemExit(1)
 
     try:
         results = run_search(
@@ -210,7 +217,7 @@ def search(
         )
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        sys.exit(1)
+        raise SystemExit(1) from e
 
     console.print(f"[bold]Found {len(results)} messages[/bold]\n")
 
@@ -229,41 +236,18 @@ def search(
     console.print(table)
 
 
-@click.command()
-@click.option("-r", "--room", required=True, help="Room ID")
-@click.option("--dsn", help="PostgreSQL DSN (or use DYKIT_DSN env)")
-def prune(room: str, dsn: str | None) -> None:
-    """Remove duplicate messages.
-
-    Examples:
-        dystat prune -r 6657
-    """
-    dsn = dsn or get_dsn()
-    if not dsn:
-        console.print("[red]Error: DSN required. Set DYKIT_DSN or use --dsn[/red]")
-        sys.exit(1)
-
-    try:
-        deleted = run_prune(room, dsn)
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        sys.exit(1)
-
-    console.print(f"[green]Removed {deleted} duplicate records[/green]")
-
-
-# Main group
-@click.group()
-@click.version_option(version=version("dystat"), prog_name="dystat")
 def cli() -> None:
     """Douyu Statistics Tools - analyze danmu data."""
-    pass
+    app()
 
 
-cli.add_command(rank)
-cli.add_command(cluster)
-cli.add_command(search)
-cli.add_command(prune)
+def _click_compat_main(*, args: list[str] | tuple[str, ...] | None = None, **_: object) -> None:
+    tokens = list(args) if args is not None else None
+    app(tokens)
+
+
+cli.name = "dystat"  # type: ignore[attr-defined]
+cli.main = _click_compat_main  # type: ignore[attr-defined]
 
 
 if __name__ == "__main__":

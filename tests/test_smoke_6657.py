@@ -200,11 +200,6 @@ def test_smoke_6657_commands(runner: CliRunner, seeded_smoke_db: str) -> None:
     assert result_cluster.exit_code == 0, result_cluster.output
     assert "clusters" in result_cluster.output
 
-    # prune — should remove the duplicate "666" record for Alice
-    result_prune = runner.invoke(cli, ["prune", "--dsn", seeded_smoke_db, "-r", "6657"])
-    assert result_prune.exit_code == 0, result_prune.output
-    assert "Removed" in result_prune.output
-
 
 @pytest.mark.smoke
 @pytest.mark.asyncio
