@@ -18,7 +18,7 @@ The architecture is designed to decouple data collection from analysis.
 1. **Protocol (dyproto)**: Defines the data structures and communication standards used throughout the system.
 2. **Collection (dycap)**: A CLI tool for gathering data from external sources and persisting it to a database.
 3. **Analysis (dystat)**: A CLI tool for querying collected data and generating insights or reports.
-4. **Shared (dycommon)**: Internal modules providing logging, configuration parsing, and database connection pools.
+4. **Shared (dycommon)**: Internal modules providing shared helpers like logging and configuration parsing.
 
 ### Development scope guidelines
 When adding new features, consider the following scope:
