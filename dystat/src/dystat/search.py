@@ -6,11 +6,10 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import psycopg
-from dycommon.env import get_dsn
-from dycommon.room import resolve_room
 from psycopg import sql
 
 from .query_filters import build_common_filters, parse_order_limit
+from .runtime import resolve_runtime
 
 
 @dataclass
@@ -112,14 +111,10 @@ def run_search(
     dsn: str | None = None,
 ) -> list[SearchResult]:
     """Run search command."""
-    dsn = dsn or get_dsn()
-    if not dsn:
-        raise ValueError("DSN required. Set DYKIT_DSN or pass --dsn")
-
-    resolved_room = resolve_room(room)
+    resolved_room, resolved_dsn = resolve_runtime(room, dsn)
 
     return search(
-        dsn,
+        resolved_dsn,
         resolved_room,
         query,
         username,

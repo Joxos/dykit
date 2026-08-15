@@ -146,7 +146,7 @@ class TestCollectCommand:
 
 class TestRankCommand:
     @patch("dystat.rank.rank", return_value=[])
-    @patch("dystat.rank.resolve_room", return_value="6979222")
+    @patch("dystat.runtime.resolve_room", return_value="6979222")
     def test_run_rank_resolves_room_id(
         self,
         mock_resolve_room: MagicMock,

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from importlib.metadata import version
-from typing import Annotated, Literal
+from typing import Annotated, Callable, Literal, TypeVar
 
 from cyclopts import App, Parameter
-from dycommon.env import get_dsn
 from rich.console import Console
 from rich.table import Table
 
@@ -16,6 +15,15 @@ from .search import run_search
 
 console = Console()
 app = App(name="dystat", version=lambda: f"dystat {version('dystat')}")
+_T = TypeVar("_T")
+
+
+def _run_with_cli_error(func: Callable[[], _T]) -> _T:
+    try:
+        return func()
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise SystemExit(1) from e
 
 
 @app.command
@@ -58,13 +66,8 @@ def rank(
         dystat rank -r 6657 --by content --top 5
         dystat rank -r 6657 --type dgb --top 5
     """
-    dsn = dsn or get_dsn("DYSTAT_DSN")
-    if not dsn:
-        console.print("[red]Error: DSN required. Set DYKIT_DSN or use --dsn[/red]")
-        raise SystemExit(1)
-
-    try:
-        results = run_rank(
+    results = _run_with_cli_error(
+        lambda: run_rank(
             room,
             top,
             mode,
@@ -78,9 +81,7 @@ def rank(
             first,
             dsn,
         )
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1) from e
+    )
 
     # Display table
     table = Table(title=f"Top {mode}s in room {room}")
@@ -132,13 +133,8 @@ def cluster(
     Examples:
         dystat cluster -r 6657 --threshold 0.5
     """
-    dsn = dsn or get_dsn("DYSTAT_DSN")
-    if not dsn:
-        console.print("[red]Error: DSN required. Set DYKIT_DSN or use --dsn[/red]")
-        raise SystemExit(1)
-
-    try:
-        results = run_cluster(
+    results = _run_with_cli_error(
+        lambda: run_cluster(
             room,
             threshold,
             msg_type,
@@ -152,9 +148,7 @@ def cluster(
             days,
             dsn,
         )
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1) from e
+    )
 
     console.print(f"[bold]Found {len(results)} clusters[/bold]\n")
 
@@ -197,13 +191,8 @@ def search(
         dystat search -r 6657 --content "hello"
         dystat search -r 6657 --user "张三"
     """
-    dsn = dsn or get_dsn("DYSTAT_DSN")
-    if not dsn:
-        console.print("[red]Error: DSN required. Set DYKIT_DSN or use --dsn[/red]")
-        raise SystemExit(1)
-
-    try:
-        results = run_search(
+    results = _run_with_cli_error(
+        lambda: run_search(
             room,
             content,
             username,
@@ -215,9 +204,7 @@ def search(
             first,
             dsn,
         )
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1) from e
+    )
 
     console.print(f"[bold]Found {len(results)} messages[/bold]\n")
 
