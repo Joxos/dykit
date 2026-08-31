@@ -121,6 +121,9 @@ class AsyncCollector:
 
                 cycle_errors: list[str] = []
                 for _ in range(len(self._candidate_urls)):
+                    if not self._running:
+                        break
+
                     url = self._candidate_urls[self._candidate_index % len(self._candidate_urls)]
                     self._candidate_index += 1
 
@@ -138,10 +141,14 @@ class AsyncCollector:
                         cycle_errors.append(str(e))
                         await self._stop_heartbeat()
                         self._websocket = None
+                        if not self._running:
+                            return  # stop requested: exit without more retries
                         await self._refresh_candidates_if_needed(force=True)
                         continue
 
                 if cycle_errors:
+                    if not self._running:
+                        break
                     await asyncio.sleep(WS_RECOVERY_BACKOFF_SECONDS)
                     await self._refresh_candidates_if_needed(force=True)
         finally:
