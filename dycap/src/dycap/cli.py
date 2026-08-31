@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import signal
 import sys
 from datetime import datetime
 from importlib.metadata import version
@@ -62,6 +63,15 @@ _CSV_OUTPUT_GROUP = Group(show=False, validator=_validate_csv_output)
 
 app = App(name="dycap", version=lambda: f"dycap {version('dycap')}")
 console = Console()
+
+
+def _termination_signal_to_keyboardinterrupt(signum: int, _frame: object) -> None:
+    """Turn SIGTERM into KeyboardInterrupt so shutdown is graceful.
+
+    systemd stops services with SIGTERM; without this handler the process is
+    killed immediately and the run file never gets its meta.ended_at marker.
+    """
+    raise KeyboardInterrupt
 
 
 @app.default
@@ -127,6 +137,8 @@ async def collect(
         logger.remove()
         logger.add(sys.stderr, level="INFO")
         logger.info("Verbose mode enabled")
+
+    signal.signal(signal.SIGTERM, _termination_signal_to_keyboardinterrupt)
 
     type_filter = (
         [token.strip() for token in msg_types_include.split(",") if token.strip()]
