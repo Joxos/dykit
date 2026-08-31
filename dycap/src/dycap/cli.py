@@ -84,6 +84,15 @@ async def _run_collector(collector: AsyncCollector, shutdown_event: asyncio.Even
         {connect_task, shutdown_task}, return_when=asyncio.FIRST_COMPLETED
     )
     if shutdown_task in done and not connect_task.done():
+        print("Shutting down...")
+        # Ignore further Ctrl+C/SIGTERM during teardown: a second signal
+        # (e.g. an impatient double-press) would interrupt close() and skip
+        # the meta.ended_at marker on platforms without loop signal handlers.
+        try:
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        except ValueError:
+            pass
         try:
             await collector.stop()
             await connect_task
@@ -160,13 +169,21 @@ async def collect(
     # Graceful shutdown: route SIGINT/SIGTERM through an asyncio event so the
     # run file always gets its meta.ended_at marker. Falls back to raising
     # KeyboardInterrupt on platforms without loop signal handlers.
+    #
+    # The two signals are registered independently: on Windows
+    # add_signal_handler(SIGTERM) raises NotImplementedError, and a shared
+    # try/except would leave SIGINT hijacked (event set, nobody consuming it)
+    # while use_event_signals stays False - making Ctrl+C unable to exit.
     loop = asyncio.get_running_loop()
     shutdown_event = asyncio.Event()
     use_event_signals = False
     try:
         loop.add_signal_handler(signal.SIGINT, shutdown_event.set)
-        loop.add_signal_handler(signal.SIGTERM, shutdown_event.set)
         use_event_signals = True
+    except NotImplementedError:
+        pass
+    try:
+        loop.add_signal_handler(signal.SIGTERM, shutdown_event.set)
     except NotImplementedError:
         signal.signal(signal.SIGTERM, _termination_signal_to_keyboardinterrupt)
 
