@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dykit"
-version = "5.0.5"
-description = "Meta package that installs dyproto, dycap, and dystat."
+version = "5.0.6"
+description = "Meta package that installs dyproto, dysource, dycap, and dystat."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = [
     "dyproto>=0.1.0",
+    "dysource>=0.1.0",
     "dycap>=0.1.0",
     "dystat>=0.1.0",
 ]
@@ -19,10 +20,11 @@ dependencies = [
 py-modules = []
 
 [tool.uv.workspace]
-members = ["dyproto", "dycommon", "dycap", "dystat"]
+members = ["dyproto", "dysource", "dycommon", "dycap", "dystat"]
 
 [tool.uv.sources]
 dyproto = { workspace = true }
+dysource = { workspace = true }
 dycommon = { workspace = true }
 dycap = { workspace = true }
 dystat = { workspace = true }

@@ -17,8 +17,8 @@ Quick Start:
     for msg in buffer.get_messages():
         process(msg)
 
-For room discovery (requires extra dependencies):
-    from dyproto.discovery import resolve_room_id, get_danmu_server
+For room discovery (see the `dysource` package):
+    from dysource import resolve_room_id, get_danmu_server
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from .protocol import (
     encode_message,
     serialize_message,
 )
-from .types import MessageType
+from .types import MESSAGE_KINDS, MSG_TYPE_TO_ENUM, UNKNOWN_KIND, MessageKindInfo, MessageType
 
 # Convenience functions
 __all__ = [
@@ -48,6 +48,10 @@ __all__ = [
     "MessageBuffer",
     # Types
     "MessageType",
+    "MessageKindInfo",
+    "MSG_TYPE_TO_ENUM",
+    "MESSAGE_KINDS",
+    "UNKNOWN_KIND",
     "PacketHeader",
     # Constants
     "DOUYU_WS_URL",

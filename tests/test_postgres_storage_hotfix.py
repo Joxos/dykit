@@ -7,6 +7,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import psycopg
 import pytest
+from dycap.schema import SCHEMA_STATEMENTS
 from dycap.storage.postgres import PostgreSQLStorageFromDSN
 from dycap.types import DanmuMessage
 
@@ -31,48 +32,18 @@ def smoke_dsn() -> str:
 
 @pytest.fixture
 def seeded_smoke_db(smoke_dsn: str) -> str:
-    setup_sql = """
-    CREATE SCHEMA IF NOT EXISTS smoke;
+    setup_sql = "CREATE SCHEMA IF NOT EXISTS smoke;" + "".join(SCHEMA_STATEMENTS)
 
-    CREATE TABLE IF NOT EXISTS smoke.danmaku (
-        id          SERIAL PRIMARY KEY,
-        timestamp   TIMESTAMP NOT NULL,
-        room_id     TEXT NOT NULL,
-        msg_type    TEXT NOT NULL,
-        user_id     TEXT,
-        username    TEXT,
-        content     TEXT,
-        user_level  INTEGER,
-        gift_id     TEXT,
-        gift_count  INTEGER,
-        gift_name   TEXT,
-        badge_level INTEGER,
-        badge_name  TEXT,
-        noble_level INTEGER,
-        avatar_url  TEXT,
-        raw_data    JSONB
-    );
-
-    CREATE TABLE IF NOT EXISTS smoke.danmaku_dead_letter (
-        id            SERIAL PRIMARY KEY,
-        failed_at     TIMESTAMP NOT NULL DEFAULT NOW(),
-        room_id       TEXT NOT NULL,
-        msg_type      TEXT NOT NULL,
-        username      TEXT,
-        content       TEXT,
-        reason        TEXT NOT NULL,
-        error_type    TEXT,
-        error_message TEXT,
-        payload_text  TEXT NOT NULL
-    );
-
-    TRUNCATE TABLE smoke.danmaku RESTART IDENTITY;
-    TRUNCATE TABLE smoke.danmaku_dead_letter RESTART IDENTITY;
+    truncate_sql = """
+    TRUNCATE TABLE danmaku RESTART IDENTITY;
+    TRUNCATE TABLE danmaku_dead_letter RESTART IDENTITY;
+    TRUNCATE TABLE collection_sessions RESTART IDENTITY;
     """
 
     with psycopg.connect(smoke_dsn) as conn:
         with conn.cursor() as cur:
             cur.execute(setup_sql)
+            cur.execute(truncate_sql)
         conn.commit()
 
     return smoke_dsn

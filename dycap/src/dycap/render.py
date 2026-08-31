@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from dyproto import MessageType
+from dyproto import MESSAGE_KINDS, UNKNOWN_KIND, MessageType
 from rich.text import Text
 
 from .types import DanmuMessage
@@ -83,17 +83,6 @@ def _style_from_danmu_color(color_value: str | None) -> str:
     return "white"
 
 
-_TYPE_ICON_MAP: dict[MessageType, str] = {
-    MessageType.CHATMSG: "💬",
-    MessageType.DGB: "🎁",
-    MessageType.UENTER: "🚪",
-    MessageType.ANBC: "👑",
-    MessageType.RNEWBC: "♻️",
-    MessageType.BLAB: "🏷️",
-    MessageType.UPGRADE: "⬆️",
-}
-
-
 def _gift_style(message: DanmuMessage) -> str:
     count = message.gift_count or 1
     if count >= 100:
@@ -105,7 +94,7 @@ def _gift_style(message: DanmuMessage) -> str:
 
 def render_console_line(message: DanmuMessage, room_display: str | None = None) -> Text:
     room = room_display or message.room_id
-    icon = _TYPE_ICON_MAP.get(message.msg_type, "🔹")
+    icon = MESSAGE_KINDS.get(message.msg_type, UNKNOWN_KIND).icon
     text = render_message_text(message)
 
     line = Text()

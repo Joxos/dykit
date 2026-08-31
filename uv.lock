@@ -8,6 +8,7 @@ members = [
     "dycommon",
     "dykit",
     "dyproto",
+    "dysource",
     "dystat",
 ]
 
@@ -120,12 +121,13 @@ wheels = [
 
 [[package]]
 name = "dycap"
-version = "0.1.2"
+version = "0.1.3"
 source = { editable = "dycap" }
 dependencies = [
     { name = "cyclopts" },
     { name = "dycommon" },
-    { name = "dyproto", extra = ["discovery"] },
+    { name = "dyproto" },
+    { name = "dysource" },
     { name = "loguru" },
     { name = "psycopg", extra = ["binary"] },
     { name = "rich" },
@@ -137,7 +139,8 @@ dependencies = [
 requires-dist = [
     { name = "cyclopts" },
     { name = "dycommon", editable = "dycommon" },
-    { name = "dyproto", extras = ["discovery"], editable = "dyproto" },
+    { name = "dyproto", editable = "dyproto" },
+    { name = "dysource", editable = "dysource" },
     { name = "loguru", specifier = ">=0.7.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.0.0" },
     { name = "rich", specifier = ">=14.0.0" },
@@ -147,22 +150,23 @@ requires-dist = [
 
 [[package]]
 name = "dycommon"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "dycommon" }
 dependencies = [
-    { name = "dyproto", extra = ["discovery"] },
+    { name = "dysource" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "dyproto", extras = ["discovery"], editable = "dyproto" }]
+requires-dist = [{ name = "dysource", editable = "dysource" }]
 
 [[package]]
 name = "dykit"
-version = "5.0.5"
+version = "5.0.6"
 source = { editable = "." }
 dependencies = [
     { name = "dycap" },
     { name = "dyproto" },
+    { name = "dysource" },
     { name = "dystat" },
 ]
 
@@ -179,6 +183,7 @@ dev = [
 requires-dist = [
     { name = "dycap", editable = "dycap" },
     { name = "dyproto", editable = "dyproto" },
+    { name = "dysource", editable = "dysource" },
     { name = "dystat", editable = "dystat" },
 ]
 
@@ -193,14 +198,20 @@ dev = [
 
 [[package]]
 name = "dyproto"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "dyproto" }
 dependencies = [
     { name = "construct" },
 ]
 
-[package.optional-dependencies]
-discovery = [
+[package.metadata]
+requires-dist = [{ name = "construct", specifier = ">=2.10.70" }]
+
+[[package]]
+name = "dysource"
+version = "0.1.0"
+source = { editable = "dysource" }
+dependencies = [
     { name = "beautifulsoup4" },
     { name = "httpx" },
     { name = "tenacity" },
@@ -208,21 +219,20 @@ discovery = [
 
 [package.metadata]
 requires-dist = [
-    { name = "beautifulsoup4", marker = "extra == 'discovery'", specifier = ">=4.14.3" },
-    { name = "construct", specifier = ">=2.10.70" },
-    { name = "httpx", marker = "extra == 'discovery'", specifier = ">=0.28.1" },
-    { name = "tenacity", marker = "extra == 'discovery'", specifier = ">=9.1.2" },
+    { name = "beautifulsoup4", specifier = ">=4.14.3" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "tenacity", specifier = ">=9.1.2" },
 ]
-provides-extras = ["discovery"]
 
 [[package]]
 name = "dystat"
-version = "0.1.2"
+version = "0.1.3"
 source = { editable = "dystat" }
 dependencies = [
     { name = "cyclopts" },
     { name = "dycommon" },
-    { name = "dyproto", extra = ["discovery"] },
+    { name = "dyproto" },
+    { name = "dysource" },
     { name = "psycopg", extra = ["binary"] },
     { name = "rapidfuzz" },
     { name = "rich" },
@@ -232,7 +242,8 @@ dependencies = [
 requires-dist = [
     { name = "cyclopts" },
     { name = "dycommon", editable = "dycommon" },
-    { name = "dyproto", extras = ["discovery"], editable = "dyproto" },
+    { name = "dyproto", editable = "dyproto" },
+    { name = "dysource", editable = "dysource" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.0.0" },
     { name = "rapidfuzz", specifier = ">=3.14.1" },
     { name = "rich", specifier = ">=14.0.0" },

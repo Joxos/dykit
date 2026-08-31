@@ -1,10 +1,8 @@
-"""Room discovery for Douyu protocol.
+"""Room discovery for Douyu.
 
 This module provides functions to resolve room IDs and discover danmu servers.
 
 Requires extra dependencies: httpx, beautifulsoup4, tenacity
-
-Install with: pip install dyproto[discovery]
 """
 
 from __future__ import annotations

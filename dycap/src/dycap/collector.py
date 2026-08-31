@@ -11,12 +11,13 @@ from typing import Any
 
 import websockets
 from dyproto import (
+    MSG_TYPE_TO_ENUM,
     MessageBuffer,
     MessageType,
     encode_message,
     serialize_message,
 )
-from dyproto.discovery import get_danmu_server
+from dysource import get_danmu_server
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential
 from websockets import Origin
 from websockets.exceptions import ConnectionClosed
@@ -42,37 +43,6 @@ from .types import DanmuMessage
 DOUYU_WS_CONNECT_KWARGS: dict[str, Any] = {
     "ping_interval": None,
     "ping_timeout": None,
-}
-
-# Message type mappings
-MSG_TYPE_TO_ENUM: dict[str, MessageType] = {
-    "chatmsg": MessageType.CHATMSG,
-    "dgb": MessageType.DGB,
-    "uenter": MessageType.UENTER,
-    "anbc": MessageType.ANBC,
-    "rnewbc": MessageType.RNEWBC,
-    "blab": MessageType.BLAB,
-    "upgrade": MessageType.UPGRADE,
-}
-
-# Chat field display templates
-CHAT_FIELD_MAP: dict[MessageType, tuple[str, str]] = {
-    MessageType.DGB: ("送出了 {gfcnt}x 礼物{gfid}", "dgb"),
-    MessageType.UENTER: ("进入了直播间", "uenter"),
-    MessageType.ANBC: ("开通了{nl}级贵族", "anbc"),
-    MessageType.RNEWBC: ("续费了{nl}级贵族", "rnewbc"),
-    MessageType.BLAB: ("粉丝牌《{bnn}》升级至{bl}级", "blab"),
-    MessageType.UPGRADE: ("升级到{user_level}级", "upgrade"),
-}
-
-MSG_TYPE_LABELS: dict[str, str] = {
-    "chatmsg": "弹幕",
-    "dgb": "礼物",
-    "uenter": "进场",
-    "anbc": "开通贵族",
-    "rnewbc": "续费贵族",
-    "blab": "粉丝牌升级",
-    "upgrade": "等级升级",
 }
 
 
@@ -258,8 +228,8 @@ class AsyncCollector:
         if not force and (now - self._last_discovery_time) < 25:
             return
 
-        self._candidate_urls, self._real_room_id = get_danmu_server(
-            self.room_id, manual_url=self.ws_url_override
+        self._candidate_urls, self._real_room_id = await asyncio.to_thread(
+            get_danmu_server, self.room_id, 10.0, self.ws_url_override
         )
         self._last_discovery_time = now
         if self._candidate_index >= len(self._candidate_urls):

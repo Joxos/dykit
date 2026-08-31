@@ -5,11 +5,7 @@ Douyu Live Stream Protocol - minimal library for encoding/decoding danmu message
 ## Installation
 
 ```bash
-# Core (encoding/decoding only)
 pip install dyproto
-
-# With room discovery
-pip install dyproto[discovery]
 ```
 
 ## Quick Start
@@ -64,10 +60,14 @@ for msg_dict in buffer.get_messages():
 | `CLIENT_MSG_TYPE` | Client message type (689) |
 | `SERVER_MSG_TYPE` | Server message type (690) |
 
-## Room Discovery (optional)
+## Room Discovery
+
+Room ID resolution and danmu server discovery moved to the
+[`dysource`](https://pypi.org/project/dysource/) package (dyproto is now a
+pure codec with no network dependencies):
 
 ```python
-from dyproto.discovery import resolve_room_id, get_danmu_server
+from dysource import resolve_room_id, get_danmu_server
 
 # Resolve vanity URL to numeric ID
 room_id = resolve_room_id("longzhu")  # -> 6657
@@ -76,8 +76,6 @@ room_id = resolve_room_id("longzhu")  # -> 6657
 urls, room_id = get_danmu_server(6657)
 # -> (['wss://danmuproxy.douyu.com:8506/', ...], 6657)
 ```
-
-Requires `dyproto[discovery]`.
 
 ## License
 

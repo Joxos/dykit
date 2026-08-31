@@ -11,13 +11,19 @@ from cyclopts import App, Group, Parameter
 from cyclopts.argument import ArgumentCollection
 from dycommon.env import get_dsn
 from dycommon.room import resolve_room
+from dyproto import MESSAGE_KINDS, MSG_TYPE_TO_ENUM
 from loguru import logger
 from rich.console import Console
 
-from .collector import MSG_TYPE_LABELS, MSG_TYPE_TO_ENUM, AsyncCollector
+from .collector import AsyncCollector
 from .render import render_console_line
 from .storage import ConsoleStorage, CSVStorage, PostgreSQLStorageFromDSN
 from .types import DanmuMessage
+
+_AVAILABLE_TYPES_HELP = ", ".join(
+    f"{key}（{MESSAGE_KINDS[MSG_TYPE_TO_ENUM[key]].label_cn}）"
+    for key in sorted(MSG_TYPE_TO_ENUM.keys())
+)
 
 
 def _validate_with_without(arguments: ArgumentCollection) -> None:
@@ -77,12 +83,7 @@ async def collect(
             name="--with",
             help=(
                 "Filter to only these message types (comma-separated). "
-                "Available: "
-                + ", ".join(
-                    f"{key}（{MSG_TYPE_LABELS.get(key, key)}）"
-                    for key in sorted(MSG_TYPE_TO_ENUM.keys())
-                )
-                + ". "
+                f"Available: {_AVAILABLE_TYPES_HELP}. "
                 "Example: --with chatmsg,dgb,uenter"
             ),
             group=_WITH_WITHOUT_GROUP,
@@ -94,12 +95,7 @@ async def collect(
             name="--without",
             help=(
                 "Filter out these message types (comma-separated). "
-                "Available: "
-                + ", ".join(
-                    f"{key}（{MSG_TYPE_LABELS.get(key, key)}）"
-                    for key in sorted(MSG_TYPE_TO_ENUM.keys())
-                )
-                + ". "
+                f"Available: {_AVAILABLE_TYPES_HELP}. "
                 "Example: --without uenter"
             ),
             group=_WITH_WITHOUT_GROUP,
@@ -181,14 +177,22 @@ async def collect(
             print(f"Error: {e}", file=sys.stderr)
             raise SystemExit(1) from e
         finally:
+            stats = getattr(storage_handler, "stats", None)
+            stats_text = ""
+            if stats is not None:
+                stats_text = (
+                    f", flushes={stats.get('flushes', 0)}, "
+                    f"dead_letters={stats.get('dead_letters', 0)}"
+                )
             if last_message_at is not None:
                 print(
                     "Summary: "
                     f"storage={storage}, messages={message_count}, "
                     f"last_message_at={last_message_at.isoformat(timespec='seconds')}"
+                    f"{stats_text}"
                 )
             else:
-                print(f"Summary: storage={storage}, messages={message_count}")
+                print(f"Summary: storage={storage}, messages={message_count}{stats_text}")
 
 
 def main() -> None:

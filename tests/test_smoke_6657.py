@@ -10,6 +10,7 @@ import psycopg
 import pytest
 from dycap.cli import collect
 from dycap.collector import AsyncCollector
+from dycap.schema import SCHEMA_STATEMENTS
 from dycap.storage import ConsoleStorage, CSVStorage, PostgreSQLStorageFromDSN
 from dycap.types import DanmuMessage
 from dystat.cli import cli
@@ -40,38 +41,12 @@ def seeded_smoke_db(smoke_dsn: str) -> str:
     # New packages use room_id strings directly — no resolution needed.
     room_id = "6657"
 
-    setup_sql = """
-    CREATE SCHEMA IF NOT EXISTS smoke;
+    setup_sql = "CREATE SCHEMA IF NOT EXISTS smoke;" + "".join(SCHEMA_STATEMENTS)
 
-    CREATE TABLE IF NOT EXISTS smoke.danmaku (
-        id          SERIAL PRIMARY KEY,
-        timestamp   TIMESTAMP NOT NULL,
-        room_id     TEXT NOT NULL,
-        msg_type    TEXT NOT NULL,
-        user_id     TEXT,
-        username    TEXT,
-        content     TEXT,
-        user_level  INTEGER,
-        gift_id     TEXT,
-        gift_count  INTEGER,
-        gift_name   TEXT,
-        badge_level INTEGER,
-        badge_name  TEXT,
-        noble_level INTEGER,
-        avatar_url  TEXT,
-        raw_data    JSONB
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_smoke_danmaku_room_time
-    ON smoke.danmaku(room_id, timestamp DESC);
-
-    CREATE INDEX IF NOT EXISTS idx_smoke_danmaku_user_id
-    ON smoke.danmaku(user_id);
-
-    CREATE INDEX IF NOT EXISTS idx_smoke_danmaku_msg_type
-    ON smoke.danmaku(msg_type);
-
-    TRUNCATE TABLE smoke.danmaku;
+    truncate_sql = """
+    TRUNCATE TABLE danmaku;
+    TRUNCATE TABLE danmaku_dead_letter;
+    TRUNCATE TABLE collection_sessions;
     """
 
     seed_rows = [
@@ -167,6 +142,7 @@ def seeded_smoke_db(smoke_dsn: str) -> str:
     with psycopg.connect(smoke_dsn) as conn:
         with conn.cursor() as cur:
             cur.execute(setup_sql)
+            cur.execute(truncate_sql)
             for row in seed_rows:
                 cur.execute(insert_sql, [*row, None])
         conn.commit()

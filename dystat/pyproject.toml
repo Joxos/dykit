@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dystat"
-version = "0.1.2"
+version = "0.1.3"
 description = "Douyu Statistics Tools - analyze danmu data with rank, cluster, and search."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -15,7 +15,8 @@ authors = [
 keywords = ["douyu", "danmu", "chat", "statistics", "analysis"]
 dependencies = [
     "dycommon>=0.1.0",
-    "dyproto[discovery]>=0.1.0",
+    "dysource>=0.1.0",
+    "dyproto>=0.1.0",
     "psycopg[binary]>=3.0.0",
     "cyclopts",
     "rich>=14.0.0",
@@ -27,6 +28,7 @@ dystat = "dystat.cli:cli"
 
 [tool.uv.sources]
 dycommon = { workspace = true }
+dysource = { workspace = true }
 dyproto = { workspace = true }
 
 [tool.setuptools.packages.find]

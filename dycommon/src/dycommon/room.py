@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dyproto.discovery import resolve_room_id
+from dysource import resolve_room_id
 
 
 def resolve_room(room: str) -> str:

@@ -9,10 +9,12 @@ from pathlib import Path
 from typing import Any
 
 import psycopg
+from loguru import logger
 from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 
 from ..constants import DB_BATCH_FLUSH_INTERVAL_SECONDS, DB_BATCH_SIZE
+from ..schema import SCHEMA_STATEMENTS
 from ..types import DanmuMessage
 from .base import StorageHandler
 
@@ -187,6 +189,8 @@ class PostgreSQLStorage(StorageHandler):
         self._flush_task: asyncio.Task[None] | None = None
         self._last_flush_time: float = 0
         self._closed = False
+        self._session_id: int | None = None
+        self._stats: dict[str, int] = {"messages": 0, "flushes": 0, "dead_letters": 0}
         quarantine_path = os.environ.get("DYCAP_BAD_RECORDS_PATH")
         if quarantine_path:
             self._bad_records_path = Path(quarantine_path)
@@ -255,9 +259,7 @@ class PostgreSQLStorage(StorageHandler):
 
         # Keep full DSN query params (e.g., search_path).
         instance._connection = await AsyncConnection.connect(dsn)
-        await instance._create_schema()
-        instance._last_flush_time = asyncio.get_running_loop().time()
-        instance._flush_task = asyncio.create_task(instance._flush_loop())
+        await instance._post_connect()
         return instance
 
     async def _connect(self) -> None:
@@ -269,60 +271,76 @@ class PostgreSQLStorage(StorageHandler):
             user=self._user,
             password=self._password,
         )
+        await self._post_connect()
+
+    async def _post_connect(self) -> None:
+        """Run post-connect setup: schema, session row, flush loop."""
         await self._create_schema()
+        await self._start_session()
         self._last_flush_time = asyncio.get_running_loop().time()
         self._flush_task = asyncio.create_task(self._flush_loop())
 
     async def _create_schema(self) -> None:
-        """Create danmaku table and indexes if not exists."""
+        """Create danmaku tables, indexes, and collection_sessions if not exists."""
         if self._connection is None:
             return
 
         async with self._connection.cursor() as cursor:
-            schema_query = """
-            CREATE TABLE IF NOT EXISTS danmaku (
-                id          SERIAL PRIMARY KEY,
-                timestamp   TIMESTAMP NOT NULL,
-                room_id     TEXT NOT NULL,
-                msg_type    TEXT NOT NULL,
-                user_id     TEXT,
-                username    TEXT,
-                content     TEXT,
-                user_level  INTEGER,
-                gift_id     TEXT,
-                gift_count  INTEGER,
-                gift_name   TEXT,
-                badge_level INTEGER,
-                badge_name  TEXT,
-                noble_level INTEGER,
-                avatar_url  TEXT,
-                raw_data    JSONB
-            );
-            CREATE INDEX IF NOT EXISTS idx_danmaku_room_time
-                ON danmaku(room_id, timestamp DESC);
-            CREATE INDEX IF NOT EXISTS idx_danmaku_user_id
-                ON danmaku(user_id);
-            CREATE INDEX IF NOT EXISTS idx_danmaku_msg_type
-                ON danmaku(msg_type);
-
-            CREATE TABLE IF NOT EXISTS danmaku_dead_letter (
-                id            SERIAL PRIMARY KEY,
-                failed_at     TIMESTAMP NOT NULL DEFAULT NOW(),
-                room_id       TEXT NOT NULL,
-                msg_type      TEXT NOT NULL,
-                username      TEXT,
-                content       TEXT,
-                reason        TEXT NOT NULL,
-                error_type    TEXT,
-                error_message TEXT,
-                payload_text  TEXT NOT NULL
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_danmaku_dead_letter_failed_at
-                ON danmaku_dead_letter(failed_at DESC);
-            """
-            await cursor.execute(schema_query)
+            for statement in SCHEMA_STATEMENTS:
+                await cursor.execute(statement)
         await self._connection.commit()
+
+    async def _start_session(self) -> None:
+        """Insert a collection_sessions row for this storage session."""
+        if self._connection is None:
+            return
+        try:
+            async with self._connection.cursor() as cursor:
+                await cursor.execute(
+                    "INSERT INTO collection_sessions (room_id) VALUES (%s) RETURNING id",
+                    (self.room_id,),
+                )
+                row = await cursor.fetchone()
+            await self._connection.commit()
+            if row is not None:
+                self._session_id = int(row[0])
+        except Exception:
+            logger.warning("Failed to record collection session", exc_info=True)
+            await self._connection.rollback()
+
+    async def _close_session(self) -> None:
+        """Finalize the collection_sessions row with observed counters."""
+        if self._session_id is None or self._connection is None:
+            return
+        try:
+            async with self._connection.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    UPDATE collection_sessions
+                    SET ended_at = NOW(),
+                        message_count = %s,
+                        dead_letter_count = %s,
+                        flush_count = %s
+                    WHERE id = %s
+                    """,
+                    (
+                        self._stats["messages"],
+                        self._stats["dead_letters"],
+                        self._stats["flushes"],
+                        self._session_id,
+                    ),
+                )
+            await self._connection.commit()
+        except Exception:
+            logger.warning("Failed to finalize collection session", exc_info=True)
+            await self._connection.rollback()
+        finally:
+            self._session_id = None
+
+    @property
+    def stats(self) -> dict[str, int]:
+        """Observed counters for this storage session (messages/flushes/dead letters)."""
+        return dict(self._stats)
 
     def _prepare_message(self, msg: DanmuMessage) -> _PreparedMessage:
         sanitation_reasons: list[str] = []
@@ -456,6 +474,7 @@ class PostgreSQLStorage(StorageHandler):
         payload = self._build_bad_record_payload(prepared, reason=reason, error=error)
         payload_text = _serialize_log_record(payload)
         await self._append_bad_record_log(payload)
+        self._stats["dead_letters"] += 1
 
         try:
             async with self._connection.cursor() as cursor:
@@ -518,6 +537,7 @@ class PostgreSQLStorage(StorageHandler):
         try:
             await self._insert_prepared_messages(prepared_messages)
             await self._connection.commit()
+            self._stats["flushes"] += 1
         except Exception as exc:
             await self._connection.rollback()
 
@@ -574,6 +594,7 @@ class PostgreSQLStorage(StorageHandler):
             return
 
         self._buffer.append(message)
+        self._stats["messages"] += 1
 
         if len(self._buffer) >= self._batch_size:
             await self._flush()
@@ -596,6 +617,9 @@ class PostgreSQLStorage(StorageHandler):
         # Final flush
         if self._buffer and self._connection:
             await self._flush()
+
+        # Finalize session row with observed counters
+        await self._close_session()
 
         # Close connection
         if self._connection:

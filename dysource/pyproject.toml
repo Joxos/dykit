@@ -3,30 +3,24 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dyproto"
-version = "0.1.2"
-description = "Douyu Live Stream Protocol - minimal library for encoding/decoding danmu messages."
+name = "dysource"
+version = "0.1.0"
+description = "Douyu Live Stream Source - room ID resolution and danmu server discovery."
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
 authors = [
     {name = "Douyu Danmu Crawler Project", email = "contact@example.com"}
 ]
-keywords = ["douyu", "danmu", "chat", "websocket", "protocol"]
+keywords = ["douyu", "danmu", "room", "discovery"]
 dependencies = [
-    "construct>=2.10.70",
+    "httpx>=0.28.1",
+    "beautifulsoup4>=4.14.3",
+    "tenacity>=9.1.2",
 ]
-
-[project.urls]
-Homepage = "https://github.com/Joxos/dyproto"
-Repository = "https://github.com/Joxos/dyproto"
-
-[project.scripts]
-# No CLI - this is a library
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
 
 [tool.ruff]
 line-length = 100

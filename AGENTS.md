@@ -4,6 +4,7 @@ Python 3.12 `uv` workspace. Root `dykit` is a meta package; runtime code belongs
 
 ## Scope
 - `dyproto/`: protocol + encode/decode primitives
+- `dysource/`: room resolution + danmu server discovery (HTTP to douyu.com)
 - `dycap/`: collection CLI + storage
 - `dystat/`: analytics CLI + queries
 - `dycommon/`: shared helpers
@@ -26,7 +27,7 @@ uv run ruff check .
 
 ### Type check
 ```bash
-uv run basedpyright dycap/src dyproto/src dystat/src
+uv run basedpyright dycap/src dyproto/src dystat/src dysource/src
 ```
 Optional:
 ```bash
@@ -41,7 +42,7 @@ uv run pytest
 ### CI-equivalent local gate
 ```bash
 uv run ruff check .
-uv run basedpyright dycap/src dyproto/src dystat/src
+uv run basedpyright dycap/src dyproto/src dystat/src dysource/src
 uv run pytest
 ```
 CI reference: `.github/workflows/ci.yml`
@@ -81,12 +82,14 @@ uv run pytest -m "not smoke" -q
 Workflow reference: `.github/workflows/publish.yml`
 ```bash
 python -m build --outdir dist/dyproto ./dyproto
+python -m build --outdir dist/dysource ./dysource
 python -m build --outdir dist/dycommon ./dycommon
 python -m build --outdir dist/dycap ./dycap
 python -m build --outdir dist/dystat ./dystat
 python -m build --outdir dist/dykit .
 
 python -m twine check dist/dyproto/*
+python -m twine check dist/dysource/*
 python -m twine check dist/dycommon/*
 python -m twine check dist/dycap/*
 python -m twine check dist/dystat/*

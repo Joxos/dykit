@@ -35,7 +35,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Type check
-        run: uv run basedpyright dycap/src dyproto/src dystat/src
+        run: uv run basedpyright dycap/src dyproto/src dystat/src dysource/src
 
       - name: Tests
         run: uv run pytest

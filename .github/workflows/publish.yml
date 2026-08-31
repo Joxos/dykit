@@ -81,6 +81,7 @@ jobs:
               return data['project']['version']
 
           print(f"dyproto={read_version('dyproto/pyproject.toml')}")
+          print(f"dysource={read_version('dysource/pyproject.toml')}")
           print(f"dycommon={read_version('dycommon/pyproject.toml')}")
           print(f"dycap={read_version('dycap/pyproject.toml')}")
           print(f"dystat={read_version('dystat/pyproject.toml')}")
@@ -125,6 +126,45 @@ jobs:
 
       - name: Wait for dyproto visibility on PyPI
         run: python .github/scripts/wait_pypi.py dyproto "${{ steps.versions.outputs.dyproto }}"
+
+      - name: Skip if dysource already exists
+        id: exists_dysource
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import urllib.error
+          import urllib.request
+
+          version = "${{ steps.versions.outputs.dysource }}"
+          try:
+              with urllib.request.urlopen("https://pypi.org/pypi/dysource/json", timeout=20) as r:
+                  data = json.load(r)
+          except urllib.error.HTTPError as exc:
+              if exc.code == 404:
+                  data = {"releases": {}}
+              else:
+                  raise
+          print(f"exists={'true' if version in data.get('releases', {}) else 'false'}")
+          PY
+
+      - name: Build dysource
+        if: steps.exists_dysource.outputs.exists != 'true'
+        run: |
+          python -m build --outdir dist/dysource ./dysource
+          python -m twine check dist/dysource/*
+
+      - name: Publish dysource to PyPI
+        if: steps.exists_dysource.outputs.exists != 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/dysource/
+          attestations: false
+          verbose: true
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Wait for dysource visibility on PyPI
+        run: python .github/scripts/wait_pypi.py dysource "${{ steps.versions.outputs.dysource }}"
 
       - name: Skip if dycommon already exists
         id: exists_dycommon
