@@ -150,10 +150,24 @@ class AsyncCollector:
             self._running = False
 
     async def stop(self) -> None:
-        """Stop the collector gracefully."""
+        """Stop the collector gracefully.
+
+        Douyu's danmu server never completes the WebSocket close handshake,
+        so ``close()`` is bounded by a timeout and the transport is aborted
+        when the server stays silent - otherwise shutdown would hang forever.
+        """
         self._running = False
-        if self._websocket:
-            await self._websocket.close()
+        websocket = self._websocket
+        if websocket is None:
+            return
+        try:
+            await asyncio.wait_for(websocket.close(), timeout=2)
+        except (asyncio.TimeoutError, TimeoutError):
+            transport = getattr(websocket, "transport", None)
+            if transport is not None:
+                transport.abort()
+        except Exception:
+            pass  # connection already broken; nothing to close
 
     async def _connect_with_retry(self, url: str, ssl_context: ssl.SSLContext) -> Any:
         """Connect with retries."""
