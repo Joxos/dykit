@@ -193,11 +193,21 @@ tar -czf ~/backups/dycap-$(date +%Y%m).tgz ~/dycap-data
 | 误删/误覆盖 run 文件 | `dycap` 拒绝覆盖；备份见 §10 |
 | 未来迁移回群晖 DSM | Docker 备选方案（`docker run --restart unless-stopped -v /data`），容器化后迁移成本最低 |
 
-## 12. 落地清单（待执行）
+## 12. 落地清单（已执行 2026-08-31）
 
-1. `curl -LsSf https://astral.sh/uv/install.sh | sh`
-2. `git clone` + `uv sync`（生产模式）
-3. 写 `dycap@.service` 模板 + `enable-linger` + 启动 6657
-4. 落地 `scripts/scan_runs.py` + `dycap-scan.timer`
-5. 实弹观察 1 小时：确认 run 文件、meta 完整、无异常重连
-6. 可选：磁盘水位脚本、备份 rsync
+1. ✅ uv 安装（`curl -LsSf https://astral.sh/uv/install.sh | sh`）
+2. ✅ git clone + `uv sync`（生产模式，走 VPN SOCKS 代理秒级完成）
+3. ✅ `dycap@.service` 模板 + `enable-linger` + 启动 6657
+4. ✅ `scripts/scan_runs.py` + `dycap-scan.timer`（每小时扫描中断 run + 磁盘水位）
+5. ✅ 实弹验证：run 文件、meta 完整、无异常重连
+6. ⬜ 可选：磁盘水位脚本独立告警、备份 rsync
+
+### 部署运维记录（2026-08-31，三个真实缺陷已修复并推送）
+
+| 问题 | 表现 | 修复 |
+|---|---|---|
+| SIGTERM 直接杀进程 | `systemctl restart` 后 run 文件无 `ended_at`（正常重启被误判为中断） | cli.py：`loop.add_signal_handler(SIGINT/SIGTERM)` → 事件驱动主动收尾（不能靠 `signal.signal` 抛 KeyboardInterrupt——asyncio 中会从 loop 层冒出导致任务被取消、`close()` 不执行） |
+| `websocket.close()` 无限挂起 | 收尾卡死：斗鱼服务器不响应 close 握手 | collector.stop()：`wait_for(close, 2s)` 超时后 `transport.abort()` |
+| 内层候选循环不检查 `_running` | stop 后仍遍历全部候选 URL 重连重试，退出延迟 1-2 分钟 | connect() 内层循环/错误路径检查 `self._running`，stop 后立即退出 |
+
+验证：`kill -TERM` 手动测试 → `DONE` + `EXITED CLEANLY` + meta 完整；`systemctl --user restart` 后旧 run `ended_at` 正常写入。历史中断 run 由 scan 识别（`scan_runs.py` 退出码 1）。
