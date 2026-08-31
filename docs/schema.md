@@ -15,23 +15,32 @@
 
 ### `danmaku` — 消息表（一条消息一行）
 
-| 列 | 类型 | 说明 |
+| 列 | 类型 | 来源（原始 key） |
 |---|---|---|
 | `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | 自增主键（run 内序号） |
-| `timestamp` | `TEXT NOT NULL` | 入站时刻，固定宽度 ISO 文本 `%Y-%m-%d %H:%M:%S.%f`（TEXT 比较即时间序） |
-| `room_id` | `TEXT NOT NULL` | 房间号 |
-| `msg_type` | `TEXT NOT NULL` | chatmsg/dgb/uenter/anbc/rnewbc/blab/upgrade |
-| `user_id` | `TEXT` | 用户 ID |
-| `username` | `TEXT` | 昵称 |
-| `content` | `TEXT` | 弹幕内容 |
-| `raw_data` | `TEXT` | **完整原始报文 JSON——全字段保留，零丢失** |
+| `timestamp` | `TEXT NOT NULL` | 入站时刻（固定宽度 ISO 文本，TEXT 比较即时间序） |
+| `room_id` | `TEXT NOT NULL` | `rid` |
+| `msg_type` | `TEXT NOT NULL` | `type` |
+| `user_id` / `username` | `TEXT` | `uid` / `nn` |
+| `user_level` | `INTEGER` | `level` |
+| `avatar_url` | `TEXT` | `ic` / `av` |
+| `color` | `TEXT` | `col` / `color`（弹幕颜色） |
+| `content` | `TEXT` | `txt` |
+| `badge_level` / `badge_name` / `badge_room_id` | `INTEGER`/`TEXT`/`TEXT` | `bl` / `bnn` / `brid`（粉丝牌） |
+| `gift_id` / `gift_count` / `gift_name` | `TEXT`/`INTEGER`/`TEXT` | `gfid` / `gfcnt` / `gfn` |
+| `gift_hits` | `INTEGER` | `hits`（礼物连击数） |
+| `gift_receiver_uid` / `gift_receiver_name` | `TEXT` | `receive_uid` / `receive_nn`（送礼目标） |
+| `noble_level` | `INTEGER` | `nl` |
+| `client_type` | `TEXT` | `ct`（web/安卓/iOS/PC） |
+| `raw_data` | `TEXT` | **去重后的余量**：未入列字段的 JSON（空则 NULL） |
 
 索引：`idx_danmaku_room_ts (room_id, timestamp DESC)`、`idx_danmaku_msg_type (msg_type)`。
 
-**分层设计**：表列只保留分析命令（rank/search/cluster）实际查询的字段；
-其余字段（`user_level`、礼物/粉丝牌/贵族/头像/颜色/`ct`/`hits` 等）只存在于
-`raw_data`，需要时用 `json_extract(raw_data, '$.字段名')` 查询——无重复列、
-无数据丢失。文件格式兼容：union 视图按列名取列，多出的列被忽略。
+**分层设计**：已知有分析价值的字段全部提取为列（可直接 `WHERE`/`GROUP BY`/排序）；
+`raw_data` 只保留**未入列**的字段（去重，零重复存储）。列 + raw_data = 完整原始
+报文（零丢失）；语义未确认/未知的字段（如 `abstv2`、`bcstv2`、`dms`、`ext`、
+`sahf` 等）始终保留在余量里，可用 `json_extract(raw_data, '$.key')` 查询。
+文件格式兼容：union 视图按列名取列，多出的列被忽略。
 
 ### `meta` — run 元数据（key/value）
 

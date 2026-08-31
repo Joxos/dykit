@@ -16,7 +16,10 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 DANMAKU_VIEW_COLUMNS = (
-    "timestamp, room_id, msg_type, user_id, username, content, raw_data"
+    "timestamp, room_id, msg_type, user_id, username, user_level, "
+    "avatar_url, color, content, badge_level, badge_name, badge_room_id, "
+    "gift_id, gift_count, gift_name, gift_hits, gift_receiver_uid, "
+    "gift_receiver_name, noble_level, client_type, raw_data"
 )
 
 # Zero-row row source with properly named columns, used for the empty view

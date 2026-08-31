@@ -50,10 +50,10 @@ asyncio.run(main())
 
 Each run produces one SQLite file (`.db`) containing:
 
-- `danmaku` - one row per message. Columns are limited to what the analysis
-  commands query (timestamp, room_id, msg_type, user_id, username, content);
-  `raw_data` keeps the full original payload as JSON, so no field is ever
-  lost (any field is reachable with `json_extract`).
+- `danmaku` - one row per message. Known analysis-worthy fields are real
+  columns (user, badge, gift, noble, client type, color, ...); `raw_data`
+  keeps only the payload fields NOT extracted into columns (deduplicated),
+  so nothing is lost and nothing is stored twice.
 - `meta` - run metadata: `room`, `started_at`, `ended_at`, `messages`.
 
 A run file without `ended_at` is an interrupted run (process killed) - check

@@ -25,15 +25,20 @@ class DanmuMessage:
         username: User's display name.
         content: Message content (for chat messages).
         user_level: User's level in the streamer's room.
+        avatar_url: User's avatar URL.
+        color: Danmu color (chat messages, raw ``col``/``color`` value).
+        client_type: Client type (raw ``ct`` value, e.g. web/android/ios/pc).
+        badge_level: Fan badge level.
+        badge_name: Fan badge name.
+        badge_room_id: Room the fan badge belongs to (raw ``brid``).
         gift_id: Gift ID (for gift messages).
         gift_count: Gift count (for gift messages).
         gift_name: Gift name (for gift messages).
-        badge_level: Fan badge level.
-        badge_name: Fan badge name.
+        gift_hits: Gift combo count (raw ``hits``).
+        gift_receiver_uid: Gift receiver user ID (raw ``receive_uid``).
+        gift_receiver_name: Gift receiver display name (raw ``receive_nn``).
         noble_level: Noble level (0 = not a noble).
-        avatar_url: User's avatar URL.
-        color: Danmu color (chat messages, raw ``col``/``color`` value).
-        raw_data: Original raw message dictionary (full payload, no loss).
+        raw_data: Fields of the original payload not extracted into columns.
     """
 
     timestamp: datetime
@@ -43,12 +48,17 @@ class DanmuMessage:
     username: str | None = None
     content: str | None = None
     user_level: int | None = None
+    avatar_url: str | None = None
+    color: str | None = None
+    client_type: str | None = None
+    badge_level: int | None = None
+    badge_name: str | None = None
+    badge_room_id: str | None = None
     gift_id: str | None = None
     gift_count: int | None = None
     gift_name: str | None = None
-    badge_level: int | None = None
-    badge_name: str | None = None
+    gift_hits: int | None = None
+    gift_receiver_uid: str | None = None
+    gift_receiver_name: str | None = None
     noble_level: int | None = None
-    avatar_url: str | None = None
-    color: str | None = None
     raw_data: dict[str, Any] | None = None

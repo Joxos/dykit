@@ -14,14 +14,28 @@ from dystat.query_filters import build_common_filters, parse_order_limit
 
 DDL = """
 CREATE TABLE danmaku (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp   TEXT NOT NULL,
-    room_id     TEXT NOT NULL,
-    msg_type    TEXT NOT NULL,
-    user_id     TEXT,
-    username    TEXT,
-    content     TEXT,
-    raw_data    TEXT
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp            TEXT NOT NULL,
+    room_id              TEXT NOT NULL,
+    msg_type             TEXT NOT NULL,
+    user_id              TEXT,
+    username             TEXT,
+    user_level           INTEGER,
+    avatar_url           TEXT,
+    color                TEXT,
+    content              TEXT,
+    badge_level          INTEGER,
+    badge_name           TEXT,
+    badge_room_id        TEXT,
+    gift_id              TEXT,
+    gift_count           INTEGER,
+    gift_name            TEXT,
+    gift_hits            INTEGER,
+    gift_receiver_uid    TEXT,
+    gift_receiver_name   TEXT,
+    noble_level          INTEGER,
+    client_type          TEXT,
+    raw_data             TEXT
 );
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
@@ -95,7 +109,7 @@ class TestSchemaCompat:
         # file with additional columns (e.g. produced by a future format)
         # stays readable.
         conn = sqlite3.connect(str(tmp_path / "future.db"))
-        conn.executescript(DDL.replace("raw_data    TEXT", "raw_data    TEXT, extra TEXT"))
+        conn.executescript(DDL.replace("raw_data             TEXT", "raw_data             TEXT, extra TEXT"))
         conn.execute(
             "INSERT INTO danmaku (timestamp, room_id, msg_type, username, content, raw_data, extra) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",

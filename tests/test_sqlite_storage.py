@@ -25,7 +25,19 @@ def _message(username: str = "alice", content: str = "hello") -> DanmuMessage:
         content=content,
         user_level=5,
         color="2",
-        raw_data={"type": "chatmsg", "txt": content, "col": "2", "level": "5"},
+        client_type="1",
+        avatar_url="http://avatar/1",
+        badge_level=3,
+        badge_name="测试牌",
+        badge_room_id="9999",
+        raw_data={
+            "type": "chatmsg",
+            "txt": content,
+            "col": "2",
+            "level": "5",
+            "cst": "123",
+            "ext": "keep-me",
+        },
     )
 
 
@@ -105,9 +117,9 @@ async def test_interrupted_run_has_no_ended_at(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_non_pruned_fields_live_in_raw_data(tmp_path: Path) -> None:
-    # user_level / color / gift fields are not columns anymore; they must be
-    # preserved inside raw_data (pruned columns, zero data loss).
+async def test_extracted_fields_are_columns_and_stripped_from_raw_data(tmp_path: Path) -> None:
+    # Known analysis fields are real columns; raw_data keeps only the
+    # leftover fields (deduplicated) so nothing is stored twice.
     path = tmp_path / "run.db"
     storage = SQLiteStorage(path, room_id=ROOM, batch_size=1)
     await storage.__aenter__()  # noqa: PLC2801
@@ -121,21 +133,43 @@ async def test_non_pruned_fields_live_in_raw_data(tmp_path: Path) -> None:
     finally:
         conn.close()
 
-    assert "user_level" not in columns
-    assert "color" not in columns
-    assert "gift_id" not in columns
+    for column in (
+        "user_level",
+        "color",
+        "client_type",
+        "avatar_url",
+        "badge_level",
+        "badge_name",
+        "badge_room_id",
+    ):
+        assert column in columns
     assert raw is not None
-    assert '"txt": "hello"' in raw[0]
-    assert '"col": "2"' in raw[0]  # full payload preserved in raw_data
-    assert '"level": "5"' in raw[0]
+    # extracted keys are deduplicated out of raw_data
+    assert '"txt"' not in raw[0]
+    assert '"col"' not in raw[0]
+    assert '"level"' not in raw[0]
+    # leftover (not-extracted) keys are preserved
+    assert '"cst": "123"' in raw[0]
 
 
 @pytest.mark.asyncio
-async def test_raw_data_stored_as_json_text(tmp_path: Path) -> None:
+async def test_raw_data_none_when_all_fields_extracted(tmp_path: Path) -> None:
     path = tmp_path / "run.db"
+    message = _message()
+    message = DanmuMessage(
+        timestamp=message.timestamp,
+        room_id=message.room_id,
+        msg_type=message.msg_type,
+        user_id=message.user_id,
+        username=message.username,
+        content=message.content,
+        user_level=message.user_level,
+        color=message.color,
+        raw_data={"type": "chatmsg", "txt": "hello", "col": "2", "level": "5"},
+    )
     storage = SQLiteStorage(path, room_id=ROOM, batch_size=1)
     await storage.__aenter__()  # noqa: PLC2801
-    await storage.save(_message())
+    await storage.save(message)
     await storage.close()
 
     conn = sqlite3.connect(str(path))
@@ -144,8 +178,7 @@ async def test_raw_data_stored_as_json_text(tmp_path: Path) -> None:
     finally:
         conn.close()
     assert raw is not None
-    assert '"txt": "hello"' in raw[0]
-    assert '"col": "2"' in raw[0]  # full payload preserved
+    assert raw[0] is None  # every payload field is now a column
 
 
 @pytest.mark.asyncio

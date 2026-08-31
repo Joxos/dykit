@@ -341,6 +341,7 @@ class AsyncCollector:
         content = re.sub(r"^\s+|\s+$", "", msg_dict.get("txt", ""))
         level = msg_dict.get("level", "0")
         uid = msg_dict.get("uid", "0")
+        badge_level = msg_dict.get("bl", "")
 
         danmu_message = DanmuMessage(
             timestamp=datetime.now(),
@@ -351,6 +352,11 @@ class AsyncCollector:
             room_id=str(self._real_room_id),
             msg_type=MessageType.CHATMSG,
             color=msg_dict.get("col") or msg_dict.get("color"),
+            client_type=msg_dict.get("ct"),
+            avatar_url=msg_dict.get("ic"),
+            badge_level=int(badge_level) if badge_level.isdigit() else None,
+            badge_name=msg_dict.get("bnn"),
+            badge_room_id=msg_dict.get("brid"),
             raw_data=msg_dict,
         )
 
@@ -377,6 +383,7 @@ class AsyncCollector:
         nickname = re.sub(r"^\s+|\s+$", "", msg_dict.get("nn", ""))
         level = msg_dict.get("level", "0")
         uid = msg_dict.get("uid", "0")
+        badge_level = msg_dict.get("bl", "")
 
         payload: dict[str, Any] = {
             "timestamp": datetime.now(),
@@ -386,6 +393,11 @@ class AsyncCollector:
             "username": nickname or None,
             "user_level": int(level) if level.isdigit() else None,
             "color": msg_dict.get("col") or msg_dict.get("color"),
+            "client_type": msg_dict.get("ct"),
+            "avatar_url": msg_dict.get("ic") or msg_dict.get("av"),
+            "badge_level": int(badge_level) if badge_level.isdigit() else None,
+            "badge_name": msg_dict.get("bnn"),
+            "badge_room_id": msg_dict.get("brid"),
             "raw_data": msg_dict,
         }
 
@@ -398,24 +410,16 @@ class AsyncCollector:
                         if (gfcnt := msg_dict.get("gfcnt", "")).isdigit()
                         else None,
                         "gift_name": msg_dict.get("gfn") or msg_dict.get("gftype"),
+                        "gift_hits": int(hits)
+                        if (hits := msg_dict.get("hits", "")).isdigit()
+                        else None,
+                        "gift_receiver_uid": msg_dict.get("receive_uid"),
+                        "gift_receiver_name": msg_dict.get("receive_nn"),
                         "noble_level": int(msg_dict.get("nl", "0")) or None,
                     }
                 )
-            case MessageType.UENTER:
-                payload.update(
-                    {
-                        "badge_level": int(msg_dict.get("bl", "0")) or None,
-                        "badge_name": msg_dict.get("bnn"),
-                        "avatar_url": msg_dict.get("ic") or msg_dict.get("av"),
-                    }
-                )
-            case MessageType.BLAB:
-                payload.update(
-                    {
-                        "badge_level": int(msg_dict.get("bl", "0")) or None,
-                        "badge_name": msg_dict.get("bnn"),
-                    }
-                )
+            case MessageType.UENTER | MessageType.BLAB:
+                pass  # badge/avatar/client fields already extracted above
             case _:
                 pass
 

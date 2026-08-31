@@ -36,23 +36,81 @@ DEFAULT_FLUSH_INTERVAL_SECONDS = 2.0
 
 INSERT_DANMAKU_SQL = """
 INSERT INTO danmaku (
-    timestamp, room_id, msg_type, user_id, username, content, raw_data
-) VALUES (?, ?, ?, ?, ?, ?, ?)
+    timestamp, room_id, msg_type, user_id, username, user_level,
+    avatar_url, color, content, badge_level, badge_name, badge_room_id,
+    gift_id, gift_count, gift_name, gift_hits, gift_receiver_uid,
+    gift_receiver_name, noble_level, client_type, raw_data
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
+
+# Raw payload keys whose value is already stored in a dedicated column.
+# These are stripped from raw_data at write time (deduplication); the column
+# plus raw_data together remain the complete original payload.
+_EXTRACTED_KEYS: frozenset[str] = frozenset(
+    {
+        "type",     # -> msg_type
+        "rid",      # -> room_id
+        "uid",      # -> user_id
+        "nn",       # -> username
+        "txt",      # -> content
+        "level",    # -> user_level
+        "col",      # -> color
+        "color",    # -> color
+        "ic",       # -> avatar_url
+        "av",       # -> avatar_url
+        "bl",       # -> badge_level
+        "bnn",      # -> badge_name
+        "brid",     # -> badge_room_id
+        "nl",       # -> noble_level
+        "gfid",     # -> gift_id
+        "gfcnt",    # -> gift_count
+        "gfn",      # -> gift_name
+        "gftype",   # -> gift_name
+        "hits",     # -> gift_hits
+        "receive_uid",  # -> gift_receiver_uid
+        "receive_nn",   # -> gift_receiver_name
+        "ct",       # -> client_type
+    }
+)
+
+
+def _leftover_raw_data(message: DanmuMessage) -> str | None:
+    """Serialize raw_data minus the fields already stored as columns."""
+    if message.raw_data is None:
+        return None
+    leftover = {
+        key: value
+        for key, value in message.raw_data.items()
+        if key not in _EXTRACTED_KEYS
+    }
+    if not leftover:
+        return None
+    return json.dumps(leftover, ensure_ascii=False)
 
 
 def _message_row(message: DanmuMessage) -> tuple[Any, ...]:
-    raw_data = None
-    if message.raw_data is not None:
-        raw_data = json.dumps(message.raw_data, ensure_ascii=False)
     return (
         format_timestamp(message.timestamp),
         message.room_id,
         message.msg_type.value,
         message.user_id,
         message.username,
+        message.user_level,
+        message.avatar_url,
+        message.color,
         message.content,
-        raw_data,
+        message.badge_level,
+        message.badge_name,
+        message.badge_room_id,
+        message.gift_id,
+        message.gift_count,
+        message.gift_name,
+        message.gift_hits,
+        message.gift_receiver_uid,
+        message.gift_receiver_name,
+        message.noble_level,
+        message.client_type,
+        _leftover_raw_data(message),
     )
 
 
