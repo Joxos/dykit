@@ -1,109 +1,107 @@
-# vpn.cuhk.edu.cn 选择性代理研究（hp66）
+# vpn.cuhk.edu.cn 代理化研究（hp66）
 
-目标：让 hp66 的部分流量（如 GitHub 访问）可选地走 CUHK 校园 VPN 通道，
-其余流量保持直连。
+目标：把 CUHK 校园 VPN 变成**对宿主网络零侵入的代理出口**——VPN 启动不丢
+SSH、不断已有连接、不改局域网环境；只有显式指定走代理的流量才进隧道。
 
 ## 1. 端点实测（已探测，无需登录）
 
 | 项 | 结果 |
 |---|---|
-| 身份 | **Cisco AnyConnect / Cisco Secure Client SSL VPN**（门户 "/SSL VPN Service"，登录页 `/ +CSCOE+/logon.html`） |
+| 身份 | **Cisco AnyConnect / Cisco Secure Client SSL VPN**（门户 "/SSL VPN Service"，`/+CSCOE+/logon.html`） |
 | 主机 | hp66 解析 `vpn.cuhk.edu.cn` → **116.31.95.20**（公网），HTTP 200（0.33s）✅ 可直接访问 |
-| 认证 | **纯用户名/密码表单**（POST `/ +webvpn+/index.html`），**无 SAML / 无 OTP 页面** → openconnect 可无头对接 |
+| 认证 | **纯用户名/密码表单**，无 SAML / 无 OTP → openconnect 可无头对接 |
 | 分组 | `group_list`：`CUHKSZ` / `CUHKSZ-local` / `CUHKSZ-offcampus`（校外访问用 `CUHKSZ-offcampus`） |
-| 归属 | CUHK(深圳) 校园 VPN（`cuhk.edu.cn` 域） |
 
-## 2. 结论：能作为"选择性通道"，但形态是 VPN 隧道而非 HTTP 代理
+## 2. 核心设计：隧道隔离 + SOCKS5 出口（代理形态，零侵入）
 
-AnyConnect 服务器**不提供 SOCKS/HTTP 代理端口**，通道形态是 tun 隧道。
-"部分流量选择性走这个通道"有三种落地方式，按复杂度排序：
+```
+宿主网络：路由表 / DNS / LAN / SSH 全部不动
+     │
+     │  veth（10.200.0.1 ←→ 10.200.0.2，仅新增一个直连网段）
+     ▼
+┌── 网络命名空间 vpn ──────────────────────────┐
+│  tun0  ←  openconnect（AnyConnect 隧道）     │   ← 隧道默认路由只存在于
+│  SOCKS5 ← microsocks 监听 10.200.0.2:1080    │     该命名空间内部
+└──────────────────────────────────────────────┘
+```
 
-### 方案 A：按需启停（推荐起步）⭐
-
-需要 GitHub 时才连接，用完断开——"选择性"体现在时间维度。
+- **VPN 隧道及其默认路由被关在网络命名空间里**，宿主默认路由、DNS、
+  既有连接（包括你连 hp66 的 SSH）一概不受影响——这正是"代理"的侵入性。
+- 使用方只需把流量指向 SOCKS5 端点：
 
 ```bash
-sudo apt install openconnect          # 一次性（需要 sudo 密码）
-sudo openconnect --protocol=anyconnect \
-     --user=<你的CUHK账号> \
-     --authgroup=CUHKSZ-offcampus \
-     vpn.cuhk.edu.cn                  # 交互输入密码
+# git 只走 VPN：
+git -c http.proxy=socks5h://10.200.0.2:1080 pull
+
+# 或任意命令（配合 proxychains4，需 apt 安装）：
+proxychains4 git clone https://github.com/Joxos/dykit.git
+
+# 或环境变量（socks5h = 域名也经代理解析，宿主 DNS 不动）：
+HTTPS_PROXY=socks5h://10.200.0.2:1080 uv sync
 ```
 
-连上后 `tun0` 出现；若服务器下发全隧道默认路由，则 GitHub 等全部流量
-走 VPN；断连即恢复直连。做成 systemd 服务（`sudo`）：
-
-```ini
-# /etc/systemd/system/openconnect@.service
-[Unit]
-Description=CUHK VPN tunnel
-After=network-online.target
-
-[Service]
-Type=simple
-ExecStart=/usr/sbin/openconnect --protocol=anyconnect --user=%i --authgroup=CUHKSZ-offcampus vpn.cuhk.edu.cn
-# 凭据：交互输入，或用 --passwd-on-stdin + systemd-ask-password / 密钥文件（自行权衡）
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-```
+### 路径 A：netns + openconnect + microsocks（推荐，需 root 一次性配置）
 
 ```bash
-sudo systemctl start openconnect@你的账号     # 需要时
-sudo systemctl stop openconnect@你的账号      # 用完
+# 一次性（sudo）：
+sudo ip netns add vpn
+sudo ip link add veth0 type veth peer name veth1
+sudo ip link set veth1 netns vpn
+sudo ip addr add 10.200.0.1/24 dev veth0 && sudo ip link set veth0 up
+sudo ip netns exec vpn ip addr add 10.200.0.2/24 dev veth1
+sudo ip netns exec vpn ip link set veth1 up
+sudo ip netns exec vpn ip link set lo up
+
+# 隧道进程（在 ns 内，凭据交互输入）：
+sudo ip netns exec vpn openconnect \
+     --protocol=anyconnect --authgroup=CUHKSZ-offcampus \
+     vpn.cuhk.edu.cn &
+
+# SOCKS5 出口（在 ns 内；microsocks 需先 sudo apt install microsocks）：
+sudo ip netns exec vpn microsocks -i 10.200.0.2 -p 1080 &
 ```
 
-### 方案 B：策略路由（按目标域名选择性，最贴近"选择性"语义）
+### 路径 B：Docker 容器（生命周期更干净，需 docker 权限）
 
-只有列出的目标（如 github.com 的 IP 段）走 VPN，其余全部直连：
+Docker 天然提供隔离命名空间，容器内跑 openconnect + microsocks，
+宿主只需暴露一个本地端口：
 
 ```bash
-# 1) 建立独立路由表，默认走 tun0
-ip route add default dev tun0 table 100
-
-# 2) 把 github 相关域名解析出的 IP 加入 ipset
-ipset create vpnset hash:ip
-iptables -t mangle -A OUTPUT -m set --match-set vpnset dst -j MARK --set-mark 0x1
-ip rule add fwmark 0x1 lookup 100
-
-# 3) 定期刷新 github 的 IP（cron/定时器）：
-#    for d in github.com raw.githubusercontent.com codeload.github.com api.github.com; do
-#      getent ahostsv4 $d | awk '{print $1}' | sort -u | xargs -I{} ipset add vpnset {}
-#    done
+sudo docker run -d --name vpn-proxy --cap-add NET_ADMIN \
+     --device /dev/net/tun -p 127.0.0.1:1080:1080 \
+     <openconnect+microsocks 镜像>
+# 使用：HTTPS_PROXY=socks5h://127.0.0.1:1080 git pull
 ```
 
-优点：常连 VPN 也只让 GitHub 走隧道；缺点：GitHub 用 CDN（Fastly），IP 会变，
-需要刷新任务维护。
+优点：`docker stop/start vpn-proxy` 即开关；宿主机零路由改动。
+前置：Joxos 加入 docker 组（或每次 sudo），并选用/构建镜像。
 
-### 方案 C：网络命名空间（按进程选择性）
+### 路径 C（兜底）：按需全隧道
 
-`ip netns` 里单独跑一个"全走 VPN"的命名空间，只有放进该命名空间的进程
-（如 git）用 VPN。隔离最干净，但 openconnect/tun 跨命名空间配置较繁琐，
-当前场景收益不大，暂不展开。
+连接期间默认路由整体走 VPN（会短暂影响 SSH/局域网，与你的诉求相反），
+仅作为前两条路径不可用时的临时手段。
 
-## 3. 与当前网络问题的关系（重要事实）
+## 3. hp66 现状（已实测）
 
-- hp66 → GitHub **是通的**：raw.githubusercontent.com 200（1.5s），
-  codeload 慢（首字节 ~15s）。oh-my-zsh 已通过"本机下载 → SFTP 拷贝"
-  完成安装，未依赖 VPN。
-- 因此 VPN 定位是**加速/兜底通道**：GitHub 慢或抽风时 `systemctl start
-  openconnect@...` 顶上去（方案 A 已足够覆盖日常）。
-- 若未来要做"常驻选择性加速"，再升级到方案 B。
-
-## 4. 前置条件与风险
-
-| 项 | 说明 |
+| 项 | 结果 |
 |---|---|
-| sudo 密码 | `apt install openconnect`、systemd 服务、`chsh` 都需要 sudo（hp66 无免密 sudo），需你本人执行或提供密码 |
-| CUHK 凭据 | 连接必须用你的校园账号；凭据只在你交互输入时出现，不建议写入明文配置 |
-| 校园网 AUP | 遵守 CUHK(深圳) 校园网/ VPN 使用条款；VPN 通道通常禁止大流量下载等 |
-| 全隧道影响 | 方案 A 连接期间默认路由可能全走 VPN（DNS 也走校园 DNS），断开即恢复 |
-| openconnect 兼容性 | 门户无 SAML/OTP、纯密码表单 → openconnect 对接可行性高；如遇握手问题，备选官方 Cisco Secure Client（Linux 版需 sudo 安装） |
+| openconnect | **9.12-3.3 已安装** ✅（无需再装） |
+| Docker daemon | active；`/var/run/docker.sock` 属 root:docker，Joxos 不在 docker 组 |
+| microsocks / socat | 未安装（apt 可装，需 sudo） |
+| iproute2 / /dev/net/tun | 就绪 ✅ |
+| GitHub 直连 | 通但慢（raw 1.5s / codeload 首字节 ~15s）→ 代理作为加速/兜底 |
 
-## 5. 落地清单（待执行，需要你的 sudo 与凭据）
+## 4. 需要你提供的
 
-1. 你执行或授权：`sudo apt install openconnect` + `chsh -s /usr/bin/zsh`（顺便把 zsh 设为登录 shell）
-2. 你首次交互连接验证：`sudo openconnect --protocol=anyconnect --authgroup=CUHKSZ-offcampus vpn.cuhk.edu.cn`
-3. 验证 `tun0` 与路由后，按需封装为 systemd 服务（方案 A）
-4. 如 GitHub 仍频繁抽风，再评估方案 B 策略路由
+1. **sudo 密码**（或你亲自执行）：创建 netns/veth、装 microsocks、首次起隧道
+2. **CUHK 凭据**：openconnect 首次连接交互输入；可用 `--passwd-on-stdin` +
+   `systemd-ask-password` 或受权限保护的凭据文件，不建议明文落盘
+3. 若选 Docker 路径：把 Joxos 加入 docker 组（`sudo usermod -aG docker Joxos`）
+
+## 5. 落地清单
+
+1. sudo：`apt install microsocks`（路径 A）或 `usermod -aG docker`（路径 B）
+2. 你交互执行一次 openconnect 验证隧道（组 `CUHKSZ-offcampus`）
+3. 起 SOCKS5 出口，验证：`curl -x socks5h://10.200.0.2:1080 https://github.com`
+4. 封装为 systemd 服务（`openconnect@vpn` + `microsocks@vpn`），开机自启代理
+5. dykit 部署时 GitHub 慢 → `HTTPS_PROXY=socks5h://... git pull` / `uv sync`
