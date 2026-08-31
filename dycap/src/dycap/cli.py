@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import signal
 import sys
 from datetime import datetime
@@ -66,12 +67,30 @@ console = Console()
 
 
 def _termination_signal_to_keyboardinterrupt(signum: int, _frame: object) -> None:
-    """Turn SIGTERM into KeyboardInterrupt so shutdown is graceful.
-
-    systemd stops services with SIGTERM; without this handler the process is
-    killed immediately and the run file never gets its meta.ended_at marker.
-    """
+    """Fallback (platforms without loop.add_signal_handler support)."""
     raise KeyboardInterrupt
+
+
+async def _run_collector(collector: AsyncCollector, shutdown_event: asyncio.Event) -> None:
+    """Run the collector until it exits or shutdown is requested.
+
+    SIGINT/SIGTERM are routed through ``shutdown_event`` (via
+    ``loop.add_signal_handler``) so shutdown is graceful: the run file always
+    gets its meta.ended_at marker, no matter when the signal arrives.
+    """
+    connect_task = asyncio.create_task(collector.connect())
+    shutdown_task = asyncio.create_task(shutdown_event.wait())
+    done, _pending = await asyncio.wait(
+        {connect_task, shutdown_task}, return_when=asyncio.FIRST_COMPLETED
+    )
+    if shutdown_task in done and not connect_task.done():
+        try:
+            await collector.stop()
+            await connect_task
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:  # collector teardown failure after stop
+            print(f"collector teardown: {exc}", file=sys.stderr)
 
 
 @app.default
@@ -138,7 +157,18 @@ async def collect(
         logger.add(sys.stderr, level="INFO")
         logger.info("Verbose mode enabled")
 
-    signal.signal(signal.SIGTERM, _termination_signal_to_keyboardinterrupt)
+    # Graceful shutdown: route SIGINT/SIGTERM through an asyncio event so the
+    # run file always gets its meta.ended_at marker. Falls back to raising
+    # KeyboardInterrupt on platforms without loop signal handlers.
+    loop = asyncio.get_running_loop()
+    shutdown_event = asyncio.Event()
+    use_event_signals = False
+    try:
+        loop.add_signal_handler(signal.SIGINT, shutdown_event.set)
+        loop.add_signal_handler(signal.SIGTERM, shutdown_event.set)
+        use_event_signals = True
+    except NotImplementedError:
+        signal.signal(signal.SIGTERM, _termination_signal_to_keyboardinterrupt)
 
     type_filter = (
         [token.strip() for token in msg_types_include.split(",") if token.strip()]
@@ -196,7 +226,10 @@ async def collect(
         print(f"Collecting from room {room_display}... Press Ctrl+C to stop.")
 
         try:
-            await collector.connect()
+            if use_event_signals:
+                await _run_collector(collector, shutdown_event)
+            else:
+                await collector.connect()
         except KeyboardInterrupt:
             await collector.stop()
             print("Stopped.")
