@@ -329,6 +329,7 @@ class AsyncCollector:
             user_id=uid,
             room_id=str(self._real_room_id),
             msg_type=MessageType.CHATMSG,
+            color=msg_dict.get("col") or msg_dict.get("color"),
             raw_data=msg_dict,
         )
 
@@ -363,6 +364,7 @@ class AsyncCollector:
             "user_id": uid or None,
             "username": nickname or None,
             "user_level": int(level) if level.isdigit() else None,
+            "color": msg_dict.get("col") or msg_dict.get("color"),
             "raw_data": msg_dict,
         }
 

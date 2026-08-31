@@ -1,6 +1,7 @@
 # dycap
 
-Douyu Live Stream Danmu Collector - async library and CLI for collecting chat messages.
+Douyu Live Stream Danmu Collector - async library and CLI for collecting chat
+messages into per-run SQLite files.
 
 ## Installation
 
@@ -13,14 +14,14 @@ pip install dycap
 ### CLI
 
 ```bash
-# Collect to PostgreSQL (default)
-export DYKIT_DSN="postgresql://user:pass@localhost:5432/douyu"
+# Collect one run (default: ./dycap-data/6657_<timestamp>.db)
 dycap -r 6657
 
-# Collect to CSV
-dycap -r 6657 --storage csv -o backup.csv
+# Custom output location/filename
+dycap -r 6657 -o backup/run.db
 
-# Collect to console
+# Collect to CSV or console
+dycap -r 6657 --storage csv -o backup.csv
 dycap -r 6657 --storage console
 
 # Show version
@@ -31,19 +32,11 @@ dycap --version
 
 ```python
 import asyncio
-from dycap import AsyncCollector, PostgreSQLStorage
+from dycap import AsyncCollector
+from dycap.storage import SQLiteStorage
 
 async def main():
-    storage = await PostgreSQLStorage.create(
-        room_id="6657",
-        host="localhost",
-        port=5432,
-        database="douyu",
-        user="douyu",
-        password="pass"
-    )
-    
-    async with storage:
+    async with SQLiteStorage("run.db", room_id="6657") as storage:
         collector = AsyncCollector("6657", storage)
         try:
             await collector.connect()
@@ -53,11 +46,25 @@ async def main():
 asyncio.run(main())
 ```
 
+## Run files
+
+Each run produces one SQLite file (`.db`) containing:
+
+- `danmaku` - one row per message. Columns are limited to what the analysis
+  commands query (timestamp, room_id, msg_type, user_id, username, content);
+  `raw_data` keeps the full original payload as JSON, so no field is ever
+  lost (any field is reachable with `json_extract`).
+- `meta` - run metadata: `room`, `started_at`, `ended_at`, `messages`.
+
+A run file without `ended_at` is an interrupted run (process killed) - check
+`meta` to spot downtime. `dycap` refuses to overwrite an existing file: every
+run gets its own file, and files are immutable history.
+
 ## Features
 
 - **Async WebSocket collection** - High-performance async collection
-- **Multiple storage backends** - PostgreSQL, CSV, Console
-- **Batch writes** - Optimized PostgreSQL with buffered batch inserts
+- **Per-run SQLite storage** - One file per run, no server, no DSN
+- **Buffered commits** - Batch size 100 / 2s interval by default
 - **Type filtering** - Filter message types to collect
 - **Automatic reconnection** - Robust connection handling
 
@@ -66,19 +73,11 @@ asyncio.run(main())
 | Option | Description |
 |--------|-------------|
 | `-r, --room` | Room ID (required) |
-| `--dsn` | PostgreSQL DSN |
-| `--storage` | Storage backend (postgres/csv/console) |
-| `-o, --output` | Output file for CSV |
+| `--storage` | Storage backend: `sqlite` (default) / `csv` / `console` |
+| `-o, --output` | Output path: SQLite `.db` file or CSV file. Default: `dycap-data/<room>_<timestamp>.db` |
 | `-v, --verbose` | Enable verbose logging |
 | `--with TYPES` | Include only specified message types (comma-separated). Available: `chatmsg（弹幕）`, `dgb（礼物）`, `uenter（进场）`, `anbc（开通贵族）`, `rnewbc（续费贵族）`, `blab（粉丝牌升级）`, `upgrade（等级升级）` |
 | `--without TYPES` | Exclude specified message types (comma-separated), same candidate set as `--with` |
-
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `DYKIT_DSN` | PostgreSQL connection string |
-| `DYCAP_DSN` | Alias for DYKIT_DSN |
 
 ## License
 

@@ -5,11 +5,11 @@ from __future__ import annotations
 import sys
 from datetime import datetime
 from importlib.metadata import version
+from pathlib import Path
 from typing import Annotated, Literal
 
 from cyclopts import App, Group, Parameter
 from cyclopts.argument import ArgumentCollection
-from dycommon.env import get_dsn
 from dycommon.room import resolve_room
 from dyproto import MESSAGE_KINDS, MSG_TYPE_TO_ENUM
 from loguru import logger
@@ -17,13 +17,20 @@ from rich.console import Console
 
 from .collector import AsyncCollector
 from .render import render_console_line
-from .storage import ConsoleStorage, CSVStorage, PostgreSQLStorageFromDSN
+from .storage import ConsoleStorage, CSVStorage, SQLiteStorage
 from .types import DanmuMessage
+
+DEFAULT_DATA_DIR = "dycap-data"
 
 _AVAILABLE_TYPES_HELP = ", ".join(
     f"{key}（{MESSAGE_KINDS[MSG_TYPE_TO_ENUM[key]].label_cn}）"
     for key in sorted(MSG_TYPE_TO_ENUM.keys())
 )
+
+
+def _default_db_path(room: str) -> str:
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return str(Path(DEFAULT_DATA_DIR) / f"{room}_{stamp}.db")
 
 
 def _validate_with_without(arguments: ArgumentCollection) -> None:
@@ -39,7 +46,7 @@ def _validate_with_without(arguments: ArgumentCollection) -> None:
 
 
 def _validate_csv_output(arguments: ArgumentCollection) -> None:
-    storage_value = "postgres"
+    storage_value = "sqlite"
     output_given = False
     for argument in arguments:
         if argument.field_info.name == "storage" and argument.value is not None:
@@ -60,18 +67,23 @@ console = Console()
 @app.default
 async def collect(
     room: Annotated[str, Parameter(name=("-r", "--room"), help="Room ID to collect")],
-    dsn: Annotated[
-        str | None,
-        Parameter(name="--dsn", help="PostgreSQL DSN (or use DYKIT_DSN/DYCAP_DSN env)"),
-    ] = None,
     storage: Annotated[
-        Literal["postgres", "csv", "console"],
-        Parameter(name="--storage", help="Storage backend", group=_CSV_OUTPUT_GROUP),
-    ] = "postgres",
+        Literal["sqlite", "csv", "console"],
+        Parameter(
+            name="--storage",
+            help="Storage backend (default: sqlite - one .db file per run)",
+            group=_CSV_OUTPUT_GROUP,
+        ),
+    ] = "sqlite",
     output: Annotated[
         str | None,
         Parameter(
-            name=("-o", "--output"), help="Output file (for csv storage)", group=_CSV_OUTPUT_GROUP
+            name=("-o", "--output"),
+            help=(
+                "Output path: SQLite .db file (sqlite) or CSV file (csv). "
+                f"Default: {DEFAULT_DATA_DIR}/<room>_<timestamp>.db"
+            ),
+            group=_CSV_OUTPUT_GROUP,
         ),
     ] = None,
     verbose: Annotated[
@@ -102,7 +114,7 @@ async def collect(
         ),
     ] = None,
 ) -> None:
-    """Collect danmu messages from a Douyu room."""
+    """Collect danmu messages from a Douyu room into a run file."""
     room_display = room
     try:
         resolved_room = resolve_room(room)
@@ -111,19 +123,10 @@ async def collect(
     except Exception:
         room_display = room
 
-    dsn = dsn or get_dsn("DYCAP_DSN")
-
     if verbose:
         logger.remove()
         logger.add(sys.stderr, level="INFO")
         logger.info("Verbose mode enabled")
-
-    if storage == "postgres" and not dsn:
-        print(
-            "Error: DSN required for postgres storage. Use --dsn or set DYKIT_DSN/DYCAP_DSN.",
-            file=sys.stderr,
-        )
-        raise SystemExit(1)
 
     type_filter = (
         [token.strip() for token in msg_types_include.split(",") if token.strip()]
@@ -136,6 +139,26 @@ async def collect(
         else None
     )
 
+    output_path = ""
+    try:
+        match storage:
+            case "sqlite":
+                output_path = output or _default_db_path(room)
+                if Path(output_path).exists():
+                    raise FileExistsError(
+                        f"Output database already exists: {output_path} "
+                        "(refusing to overwrite a run file)"
+                    )
+                storage_handler = SQLiteStorage(output_path, room_id=room)
+            case "csv":
+                assert output is not None
+                storage_handler = CSVStorage(output)
+            case _:
+                storage_handler = ConsoleStorage()
+    except (FileExistsError, OSError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        raise SystemExit(1) from e
+
     message_count = 0
     last_message_at: datetime | None = None
 
@@ -147,16 +170,6 @@ async def collect(
         if storage != "console":
             console.print(render_console_line(message, room_display=room_display))
 
-    match storage:
-        case "postgres":
-            assert dsn is not None
-            storage_handler = await PostgreSQLStorageFromDSN.create(room_id=room, dsn=dsn)
-        case "csv":
-            assert output is not None
-            storage_handler = CSVStorage(output)
-        case _:
-            storage_handler = ConsoleStorage()
-
     async with storage_handler:
         collector = AsyncCollector(
             room,
@@ -166,6 +179,8 @@ async def collect(
             message_callback=message_callback,
         )
 
+        if storage == "sqlite":
+            print(f"Output: {output_path}")
         print(f"Collecting from room {room_display}... Press Ctrl+C to stop.")
 
         try:
@@ -180,10 +195,7 @@ async def collect(
             stats = getattr(storage_handler, "stats", None)
             stats_text = ""
             if stats is not None:
-                stats_text = (
-                    f", flushes={stats.get('flushes', 0)}, "
-                    f"dead_letters={stats.get('dead_letters', 0)}"
-                )
+                stats_text = f", flushes={stats.get('flushes', 0)}"
             if last_message_at is not None:
                 print(
                     "Summary: "

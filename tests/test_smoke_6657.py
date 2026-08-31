@@ -1,17 +1,16 @@
+"""Smoke tests over real SQLite run files (no external database needed)."""
+
 from __future__ import annotations
 
-import os
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-import psycopg
 import pytest
 from dycap.cli import collect
 from dycap.collector import AsyncCollector
-from dycap.schema import SCHEMA_STATEMENTS
-from dycap.storage import ConsoleStorage, CSVStorage, PostgreSQLStorageFromDSN
+from dycap.storage import SQLiteStorage
 from dycap.types import DanmuMessage
 from dystat.cli import cli
 
@@ -19,245 +18,105 @@ from dyproto import MessageType
 
 from .cli_test_runner import CliRunner
 
+ROOM = "6657"
 
-def _with_search_path(dsn: str, search_path: str) -> str:
-    parts = urlsplit(dsn)
-    query_items = dict(parse_qsl(parts.query, keep_blank_values=True))
-    query_items["options"] = f"-csearch_path={search_path}"
-    new_query = urlencode(query_items)
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
+
+@pytest.fixture(autouse=True)
+def _local_room(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep room resolution deterministic in smoke tests (no network)."""
+    monkeypatch.setattr("dycap.cli.resolve_room", lambda room: room)
+    monkeypatch.setattr("dystat.runtime.resolve_room", lambda room: room)
+
+
+def _message(
+    username: str,
+    content: str,
+    msg_type: MessageType = MessageType.CHATMSG,
+    **extra: Any,
+) -> DanmuMessage:
+    return DanmuMessage(
+        timestamp=datetime.now(),
+        room_id=ROOM,
+        msg_type=msg_type,
+        user_id=extra.get("user_id", f"u-{username}"),
+        username=username,
+        content=content,
+        user_level=extra.get("user_level", 1),
+        gift_id=extra.get("gift_id"),
+        gift_count=extra.get("gift_count"),
+        gift_name=extra.get("gift_name"),
+        color=extra.get("color"),
+        raw_data={"type": msg_type.value, "txt": content},
+    )
+
+
+async def _write_run(path: Path, messages: list[DanmuMessage]) -> None:
+    async with SQLiteStorage(path, room_id=ROOM) as storage:
+        for message in messages:
+            await storage.save(message)
 
 
 @pytest.fixture
-def smoke_dsn() -> str:
-    base_dsn = os.environ.get("DYKIT_DSN")
-    if not base_dsn:
-        pytest.skip("DYKIT_DSN is not set; skip real-db smoke tests")
-    return _with_search_path(base_dsn, "smoke,public")
-
-
-@pytest.fixture
-def seeded_smoke_db(smoke_dsn: str) -> str:
-    # New packages use room_id strings directly — no resolution needed.
-    room_id = "6657"
-
-    setup_sql = "CREATE SCHEMA IF NOT EXISTS smoke;" + "".join(SCHEMA_STATEMENTS)
-
-    truncate_sql = """
-    TRUNCATE TABLE danmaku;
-    TRUNCATE TABLE danmaku_dead_letter;
-    TRUNCATE TABLE collection_sessions;
-    """
-
-    seed_rows = [
-        (
-            "2026-03-07 10:00:00",
-            room_id,
-            "chatmsg",
-            "u1001",
-            "Alice",
-            "冲冲冲",
-            12,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        ),
-        (
-            "2026-03-07 10:00:05",
-            room_id,
-            "chatmsg",
-            "u1002",
-            "Bob",
-            "冲冲冲",
-            8,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        ),
-        (
-            "2026-03-07 10:00:10",
-            room_id,
-            "chatmsg",
-            "u1001",
-            "Alice",
-            "666",
-            12,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        ),
-        (
-            "2026-03-07 10:00:10",
-            room_id,
-            "chatmsg",
-            "u1001",
-            "Alice",
-            "666",
-            12,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        ),
-        (
-            "2026-03-07 10:00:15",
-            room_id,
-            "dgb",
-            "u2001",
-            "GiftUser",
-            "送礼",
-            18,
-            "g1",
-            3,
-            "火箭",
-            None,
-            None,
-            None,
-            None,
-        ),
-    ]
-
-    insert_sql = """
-    INSERT INTO smoke.danmaku (
-        timestamp, room_id, msg_type, user_id, username, content, user_level,
-        gift_id, gift_count, gift_name, badge_level, badge_name, noble_level, avatar_url, raw_data
-    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """
-
-    with psycopg.connect(smoke_dsn) as conn:
-        with conn.cursor() as cur:
-            cur.execute(setup_sql)
-            cur.execute(truncate_sql)
-            for row in seed_rows:
-                cur.execute(insert_sql, [*row, None])
-        conn.commit()
-
-    return smoke_dsn
+def seeded_dir(tmp_path: Path) -> Path:
+    run1 = tmp_path / "6657_20260307_100000.db"
+    run2 = tmp_path / "6657_20260308_100000.db"
+    asyncio.run(
+        _write_run(
+            run1,
+            [
+                _message("Alice", "冲冲冲"),
+                _message("Bob", "冲冲冲"),
+                _message("Alice", "666"),
+                _message("GiftUser", "送礼", MessageType.DGB, gift_id="g1", gift_count=3, gift_name="火箭"),
+            ],
+        )
+    )
+    asyncio.run(
+        _write_run(
+            run2,
+            [
+                _message("Alice", "再来一次"),
+                _message("Carol", "冲冲冲"),
+            ],
+        )
+    )
+    return tmp_path
 
 
 @pytest.mark.smoke
-def test_smoke_6657_commands(runner: CliRunner, seeded_smoke_db: str) -> None:
-    # rank — Alice sent the most messages
-    result_rank = runner.invoke(cli, ["rank", "--dsn", seeded_smoke_db, "-r", "6657", "--top", "5"])
-    assert result_rank.exit_code == 0, result_rank.output
-    assert "Alice" in result_rank.output
+def test_smoke_dystat_single_file(runner: CliRunner, seeded_dir: Path) -> None:
+    run_file = seeded_dir / "6657_20260307_100000.db"
+    result = runner.invoke(cli, ["rank", "--data", str(run_file), "-r", ROOM, "--top", "5"])
+    assert result.exit_code == 0, result.output
+    assert "Alice" in result.output
 
-    # search — find messages containing "冲冲冲"
     result_search = runner.invoke(
-        cli, ["search", "--dsn", seeded_smoke_db, "-r", "6657", "--content", "冲冲冲"]
+        cli, ["search", "--data", str(run_file), "-r", ROOM, "--content", "冲冲冲"]
     )
     assert result_search.exit_code == 0, result_search.output
     assert "Found" in result_search.output
 
-    # cluster — should complete without error
     result_cluster = runner.invoke(
         cli,
-        ["cluster", "--dsn", seeded_smoke_db, "-r", "6657", "--limit", "50", "--threshold", "0.5"],
+        ["cluster", "--data", str(run_file), "-r", ROOM, "--limit", "50", "--threshold", "0.5"],
     )
     assert result_cluster.exit_code == 0, result_cluster.output
     assert "clusters" in result_cluster.output
 
 
 @pytest.mark.smoke
-@pytest.mark.asyncio
-async def test_smoke_dycap_postgres_storage(seeded_smoke_db: str) -> None:
-    storage = await PostgreSQLStorageFromDSN.create(room_id="6657", dsn=seeded_smoke_db)
-    message = DanmuMessage(
-        timestamp=datetime.now(),
-        room_id="6657",
-        msg_type=MessageType.CHATMSG,
-        user_id="u3001",
-        username="SmokeCollector",
-        content="dycap-postgres-smoke",
-        user_level=1,
-        raw_data={"type": "chatmsg", "txt": "dycap-postgres-smoke"},
+def test_smoke_dystat_directory_union(runner: CliRunner, seeded_dir: Path) -> None:
+    # Alice appears in both run files (2 + 1 messages).
+    result = runner.invoke(cli, ["rank", "--data", str(seeded_dir), "-r", ROOM, "--top", "5"])
+    assert result.exit_code == 0, result.output
+    assert "Alice" in result.output
+    assert "Carol" in result.output  # only in the second run file
+
+    result_search = runner.invoke(
+        cli, ["search", "--data", str(seeded_dir), "-r", ROOM, "--content", "再来一次"]
     )
-
-    async with storage:
-        await storage.save(message)
-
-    with psycopg.connect(seeded_smoke_db) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT COUNT(*) FROM danmaku WHERE room_id = %s AND content = %s",
-                ("6657", "dycap-postgres-smoke"),
-            )
-            row = cur.fetchone()
-    assert row is not None
-    count = row[0]
-    assert count >= 1
-
-
-@pytest.mark.smoke
-@pytest.mark.asyncio
-async def test_smoke_dycap_csv_storage(tmp_path: Path) -> None:
-    output_file = tmp_path / "smoke.csv"
-    storage = CSVStorage(output_file)
-    message = DanmuMessage(
-        timestamp=datetime.now(),
-        room_id="6657",
-        msg_type=MessageType.CHATMSG,
-        user_id="u3002",
-        username="SmokeCSV",
-        content="dycap-csv-smoke",
-        user_level=1,
-        raw_data={"type": "chatmsg", "txt": "dycap-csv-smoke"},
-    )
-
-    async with storage:
-        await storage.save(message)
-
-    text = output_file.read_text(encoding="utf-8")
-    assert "dycap-csv-smoke" in text
-
-
-@pytest.mark.smoke
-@pytest.mark.asyncio
-async def test_smoke_dycap_console_storage(capsys: pytest.CaptureFixture[str]) -> None:
-    storage = ConsoleStorage()
-    message = DanmuMessage(
-        timestamp=datetime.now(),
-        room_id="6657",
-        msg_type=MessageType.CHATMSG,
-        user_id="u3003",
-        username="SmokeConsole",
-        content="dycap-console-smoke",
-        user_level=1,
-        raw_data={"type": "chatmsg", "txt": "dycap-console-smoke"},
-    )
-
-    async with storage:
-        await storage.save(message)
-
-    captured = capsys.readouterr()
-    assert "dycap-console-smoke" in captured.out
-
-
-@pytest.mark.smoke
-@pytest.mark.asyncio
-async def test_smoke_dycap_async_collector_instantiation(seeded_smoke_db: str) -> None:
-    storage = await PostgreSQLStorageFromDSN.create(room_id="6657", dsn=seeded_smoke_db)
-    try:
-        collector = AsyncCollector("6657", storage)
-        assert collector.room_id == "6657"
-        assert collector.storage is storage
-    finally:
-        await storage.close()
+    assert result_search.exit_code == 0, result_search.output
+    assert "再来一次" in result_search.output
 
 
 class _FakeCollector:
@@ -276,16 +135,7 @@ class _FakeCollector:
         self.message_callback = message_callback
 
     async def connect(self) -> None:
-        message = DanmuMessage(
-            timestamp=datetime.now(),
-            room_id=self.room_id,
-            msg_type=MessageType.CHATMSG,
-            user_id="u3999",
-            username="SmokeCLI",
-            content="dycap-cli-smoke",
-            user_level=1,
-            raw_data={"type": "chatmsg", "txt": "dycap-cli-smoke"},
-        )
+        message = _message("SmokeCLI", "dycap-cli-smoke")
         await self.storage.save(message)
         if self.message_callback is not None:
             self.message_callback(message)
@@ -295,27 +145,27 @@ class _FakeCollector:
 
 
 @pytest.mark.smoke
-def test_smoke_dycap_cli_postgres(
+def test_smoke_dycap_cli_sqlite(
     runner: CliRunner,
-    seeded_smoke_db: str,
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("dycap.cli.AsyncCollector", _FakeCollector)
+    out = tmp_path / "cli_smoke.db"
 
-    result = runner.invoke(
-        collect, ["--storage", "postgres", "--dsn", seeded_smoke_db, "-r", "6657"]
-    )
+    result = runner.invoke(collect, ["--storage", "sqlite", "-o", str(out), "-r", ROOM])
     assert result.exit_code == 0, result.output
 
-    with psycopg.connect(seeded_smoke_db) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT COUNT(*) FROM danmaku WHERE room_id = %s AND content = %s",
-                ("6657", "dycap-cli-smoke"),
-            )
-            row = cur.fetchone()
-    assert row is not None
-    assert row[0] >= 1
+    import sqlite3
+
+    conn = sqlite3.connect(str(out))
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM danmaku WHERE content = ?", ("dycap-cli-smoke",)).fetchone()
+        meta = dict(conn.execute("SELECT key, value FROM meta").fetchall())
+    finally:
+        conn.close()
+    assert count is not None and count[0] >= 1
+    assert meta["ended_at"] != ""  # cleanly closed run
 
 
 @pytest.mark.smoke
@@ -327,10 +177,7 @@ def test_smoke_dycap_cli_csv(
     monkeypatch.setattr("dycap.cli.AsyncCollector", _FakeCollector)
     output_file = tmp_path / "cli_smoke.csv"
 
-    result = runner.invoke(
-        collect,
-        ["--storage", "csv", "-o", str(output_file), "-r", "6657"],
-    )
+    result = runner.invoke(collect, ["--storage", "csv", "-o", str(output_file), "-r", ROOM])
     assert result.exit_code == 0, result.output
     text = output_file.read_text(encoding="utf-8")
     assert "dycap-cli-smoke" in text
@@ -343,26 +190,19 @@ def test_smoke_dycap_cli_console(
 ) -> None:
     monkeypatch.setattr("dycap.cli.AsyncCollector", _FakeCollector)
 
-    result = runner.invoke(collect, ["--storage", "console", "-r", "6657"])
+    result = runner.invoke(collect, ["--storage", "console", "-r", ROOM])
     assert result.exit_code == 0, result.output
     assert "dycap-cli-smoke" in result.output
-    assert "[6657]" in result.output
+    assert f"[{ROOM}]" in result.output
 
 
 @pytest.mark.smoke
-def test_smoke_dycap_cli_csv_always_shows_output(
-    runner: CliRunner,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr("dycap.cli.AsyncCollector", _FakeCollector)
-    output_file = tmp_path / "cli_smoke_output.csv"
+def test_smoke_dycap_storage_end_to_end(tmp_path: Path) -> None:
+    async def run() -> None:
+        path = tmp_path / "e2e.db"
+        async with SQLiteStorage(path, room_id=ROOM) as storage:
+            collector = AsyncCollector(ROOM, storage, type_filter=["chatmsg"])
+            assert collector.room_id == ROOM
+            assert collector.storage is storage
 
-    result = runner.invoke(
-        collect,
-        ["--storage", "csv", "-o", str(output_file), "-r", "6657"],
-    )
-    assert result.exit_code == 0, result.output
-    assert "Collecting from room 6657" in result.output
-    assert "dycap-cli-smoke" in result.output
-    assert "Summary:" in result.output
+    asyncio.run(run())

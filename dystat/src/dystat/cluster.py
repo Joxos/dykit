@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
-import psycopg
-from psycopg import sql
 from rapidfuzz import fuzz
 
+from .db import DataDb
 from .query_filters import build_common_filters, parse_order_limit
 from .runtime import resolve_runtime
 
@@ -22,7 +22,7 @@ class ClusterResult:
 
 
 def cluster(
-    dsn: str,
+    data: Path,
     room: str,
     threshold: float = 0.5,
     msg_type: str | None = "chatmsg",
@@ -38,7 +38,7 @@ def cluster(
     """Cluster similar messages using text similarity.
 
     Args:
-        dsn: PostgreSQL connection string.
+        data: SQLite run file or directory of run files.
         room: Room ID to analyze.
         limit: Number of source messages to consider.
         threshold: Similarity threshold (0-1).
@@ -63,32 +63,30 @@ def cluster(
         to_date=to_date,
         days=days,
     )
-    where_clauses.extend([sql.SQL("content IS NOT NULL"), sql.SQL("content != ''")])
+    where_clauses.extend(["content IS NOT NULL", "content != ''"])
 
+    where_sql = " AND ".join(where_clauses)
+    params = list(params)
     if limit_value is not None:
         params.append(limit_value)
 
-    where_sql = sql.SQL(" AND ").join(where_clauses)
-    query_sql = sql.SQL(
-        """
+    query_sql = f"""
         WITH filtered AS (
             SELECT *
-            FROM danmaku
+            FROM danmaku_all
             WHERE {where_sql}
             {order_limit_sql}
         )
-        SELECT content, COUNT(*) as cnt
+        SELECT content, COUNT(*) AS cnt
         FROM filtered
         GROUP BY content
         ORDER BY cnt DESC
-        LIMIT %s
+        LIMIT ?
         """
-    ).format(where_sql=where_sql, order_limit_sql=order_limit_sql)
 
-    with psycopg.connect(dsn) as conn:
-        with conn.cursor() as cur:
-            cur.execute(query_sql, (*params, limit))
-            messages = [(row[0], row[1]) for row in cur.fetchall()]
+    with DataDb(data) as db:
+        rows = db.query(query_sql, (*params, limit))
+        messages = [(row[0], row[1]) for row in rows]
 
     if not messages:
         return []
@@ -136,13 +134,13 @@ def run_cluster(
     last: int | None = None,
     first: int | None = None,
     days: int | None = None,
-    dsn: str | None = None,
+    data: str | None = None,
 ) -> list[ClusterResult]:
     """Run cluster command."""
-    resolved_room, resolved_dsn = resolve_runtime(room, dsn)
+    resolved_room, resolved_data = resolve_runtime(room, data)
 
     return cluster(
-        resolved_dsn,
+        resolved_data,
         resolved_room,
         threshold,
         msg_type,

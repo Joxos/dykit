@@ -32,9 +32,11 @@ htmlcov/
 
 # Project-specific
 *.csv
+*.db
 .ai/
 .sisyphus/
 backups/
+dycap-data/
 
 # OS
 .DS_Store

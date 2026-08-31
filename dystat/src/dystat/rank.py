@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
-import psycopg
-from psycopg import sql
-
+from .db import DataDb
 from .query_filters import build_common_filters, parse_order_limit
 from .runtime import resolve_runtime
 
@@ -21,7 +20,7 @@ class RankResult:
 
 
 def rank(
-    dsn: str,
+    data: Path,
     room: str,
     top: int = 10,
     mode: str = "user",
@@ -37,7 +36,7 @@ def rank(
     """Rank users or content by frequency.
 
     Args:
-        dsn: PostgreSQL connection string.
+        data: SQLite run file or directory of run files.
         room: Room ID to query.
         top: Number of top results.
         mode: "user" or "content".
@@ -64,40 +63,33 @@ def rank(
         days=days,
     )
 
-    where_sql = sql.SQL(" AND ").join(where_clauses)
+    where_sql = " AND ".join(where_clauses)
+    params = list(params)
     if limit_value is not None:
         params.append(limit_value)
 
-    with psycopg.connect(dsn) as conn:
-        with conn.cursor() as cur:
-            group_field = "username" if mode == "user" else "content"
-            query_sql = sql.SQL(
-                """
-                WITH filtered AS (
-                    SELECT *
-                    FROM danmaku
-                    WHERE {where_sql}
-                    {order_limit_sql}
-                )
-                SELECT {group_field}, COUNT(*) as cnt
-                FROM filtered
-                {content_guard}
-                GROUP BY {group_field}
-                ORDER BY cnt DESC
-                LIMIT %s
-                """
-            ).format(
-                where_sql=where_sql,
-                order_limit_sql=order_limit_sql,
-                group_field=sql.SQL(group_field),
-                content_guard=sql.SQL("WHERE content IS NOT NULL AND content != ''")
-                if mode == "content"
-                else sql.SQL(""),
-            )
-            cur.execute(query_sql, (*params, top))
-            results = cur.fetchall()
+    group_field = "username" if mode == "user" else "content"
+    content_guard = "WHERE content IS NOT NULL AND content != ''" if mode == "content" else ""
 
-    return [RankResult(rank=i + 1, value=row[0], count=row[1]) for i, row in enumerate(results)]
+    query_sql = f"""
+        WITH filtered AS (
+            SELECT *
+            FROM danmaku_all
+            WHERE {where_sql}
+            {order_limit_sql}
+        )
+        SELECT {group_field}, COUNT(*) AS cnt
+        FROM filtered
+        {content_guard}
+        GROUP BY {group_field}
+        ORDER BY cnt DESC
+        LIMIT ?
+        """
+
+    with DataDb(data) as db:
+        rows = db.query(query_sql, (*params, top))
+
+    return [RankResult(rank=i + 1, value=row[0], count=row[1]) for i, row in enumerate(rows)]
 
 
 def run_rank(
@@ -112,13 +104,13 @@ def run_rank(
     to_date: str | None = None,
     last: int | None = None,
     first: int | None = None,
-    dsn: str | None = None,
+    data: str | None = None,
 ) -> list[RankResult]:
     """Run rank command with CLI defaults."""
-    resolved_room, resolved_dsn = resolve_runtime(room, dsn)
+    resolved_room, resolved_data = resolve_runtime(room, data)
 
     return rank(
-        resolved_dsn,
+        resolved_data,
         resolved_room,
         top,
         mode,

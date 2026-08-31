@@ -7,16 +7,13 @@ from dycap.types import DanmuMessage, MessageType
 
 
 def _chat_message(*, col: str | None) -> DanmuMessage:
-    raw_data = {"type": "chatmsg", "txt": "hello"}
-    if col is not None:
-        raw_data["col"] = col
     return DanmuMessage(
         timestamp=datetime(2026, 3, 10, 12, 0, 0),
         room_id="6657",
         msg_type=MessageType.CHATMSG,
         username="Alice",
         content="hello",
-        raw_data=raw_data,
+        color=col,
     )
 
 

@@ -66,9 +66,8 @@ uv run pytest --ff -q
 ```
 
 ### Smoke tests
-`smoke` tests require a live PostgreSQL DSN via `DYKIT_DSN`.
+Smoke tests run against real SQLite run files - no external database needed:
 ```bash
-export DYKIT_DSN="postgresql://postgres:password@localhost:5432/postgres"
 uv run pytest -m smoke -q
 ```
 Run non-smoke only:
@@ -123,7 +122,7 @@ From `pyproject.toml` and current source patterns.
 - Keep CLI thin: validate -> call domain logic -> render output
 
 ### Error handling
-- Validate prerequisites early (e.g., DSN)
+- Validate prerequisites early (e.g., output path for dycap, --data path for dystat)
 - CLI failures: clear message + `raise SystemExit(1)`
 - Preserve cause: `raise SystemExit(1) from e`
 - Never silently swallow exceptions
@@ -131,14 +130,16 @@ From `pyproject.toml` and current source patterns.
 ### Async/DB patterns
 - Use async/await + async context managers for IO
 - Cancel background tasks cleanly on shutdown
-- On DB batch failures: rollback, keep buffered data for retry, re-raise
+- SQLite writes are small and synchronous; buffer commits (batch size/interval)
+  and flush on close before writing `meta.ended_at`
+- Run files are immutable: refuse to overwrite an existing .db
 
 ---
 
 ## Environment variables
-- Primary: `DYKIT_DSN`
-- Aliases: `DYCAP_DSN`, `DYSTAT_DSN`
-- Prefer `DYKIT_DSN` in new docs/scripts
+
+- No DSN required. All storage is per-run SQLite files (see `docs/schema.md`).
+- `DYCAP_BAD_RECORDS_PATH` no longer exists (SQLite accepts all payloads).
 
 ---
 

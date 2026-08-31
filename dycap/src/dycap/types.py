@@ -32,7 +32,8 @@ class DanmuMessage:
         badge_name: Fan badge name.
         noble_level: Noble level (0 = not a noble).
         avatar_url: User's avatar URL.
-        raw_data: Original raw message dictionary.
+        color: Danmu color (chat messages, raw ``col``/``color`` value).
+        raw_data: Original raw message dictionary (full payload, no loss).
     """
 
     timestamp: datetime
@@ -49,6 +50,5 @@ class DanmuMessage:
     badge_name: str | None = None
     noble_level: int | None = None
     avatar_url: str | None = None
+    color: str | None = None
     raw_data: dict[str, Any] | None = None
-
-    pass

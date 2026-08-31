@@ -1,8 +1,10 @@
 """Live smoke test - collect danmu from a real Douyu room for N seconds.
 
 Usage:
-    uv run python scripts/live_smoke.py [--room 6657] [--seconds 45] [--ws-url URL]
+    uv run python scripts/live_smoke.py [--room 6657] [--seconds 45] [--ws-url URL] [--db out.db]
 
+With --db, messages are written to a per-run SQLite file (cleanly closed,
+meta.ended_at set); without it, messages print to the console.
 Exits 0 if at least one message was received, 1 otherwise.
 """
 
@@ -14,11 +16,11 @@ import sys
 from collections import Counter
 
 from dycap.collector import AsyncCollector
-from dycap.storage import ConsoleStorage
+from dycap.storage import ConsoleStorage, SQLiteStorage
 from dycap.types import DanmuMessage
 
 
-async def _run(room: str, seconds: float, ws_url: str | None) -> int:
+async def _run(room: str, seconds: float, ws_url: str | None, db: str | None) -> int:
     received = 0
     by_type: Counter[str] = Counter()
 
@@ -27,7 +29,12 @@ async def _run(room: str, seconds: float, ws_url: str | None) -> int:
         received += 1
         by_type[message.msg_type.value] += 1
 
-    async with ConsoleStorage() as storage:
+    if db is not None:
+        storage = SQLiteStorage(db, room_id=room)
+    else:
+        storage = ConsoleStorage()
+
+    async with storage:
         collector = AsyncCollector(room, storage, ws_url=ws_url, message_callback=on_message)
         task = asyncio.create_task(collector.connect())
         try:
@@ -54,8 +61,11 @@ def main() -> int:
         "--seconds", type=float, default=45.0, help="Collection duration in seconds (default: 45)"
     )
     parser.add_argument("--ws-url", default=None, help="Optional manual WebSocket URL override")
+    parser.add_argument(
+        "--db", default=None, help="Write to a SQLite run file instead of printing to console"
+    )
     args = parser.parse_args()
-    return asyncio.run(_run(args.room, args.seconds, args.ws_url))
+    return asyncio.run(_run(args.room, args.seconds, args.ws_url, args.db))
 
 
 if __name__ == "__main__":

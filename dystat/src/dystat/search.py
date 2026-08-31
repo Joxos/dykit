@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
-import psycopg
-from psycopg import sql
+from dycommon.timestamps import parse_timestamp
 
+from .db import DataDb
 from .query_filters import build_common_filters, parse_order_limit
 from .runtime import resolve_runtime
 
@@ -23,7 +24,7 @@ class SearchResult:
 
 
 def search(
-    dsn: str,
+    data: Path,
     room: str,
     query: str | None = None,
     username: str | None = None,
@@ -37,9 +38,9 @@ def search(
     """Search danmu messages with filters.
 
     Args:
-        dsn: PostgreSQL connection string.
+        data: SQLite run file or directory of run files.
         room: Room ID to search.
-        query: Filter by content (ILIKE).
+        query: Filter by content (LIKE).
         username: Filter by username.
         user_id: Filter by user ID.
         msg_type: Filter by message type.
@@ -66,30 +67,26 @@ def search(
     )
 
     if query is not None:
-        where_clauses.append(sql.SQL("content ILIKE %s"))
+        where_clauses.append("content LIKE ?")
         params.append(f"%{query}%")
 
-    where_sql = sql.SQL(" AND ").join(where_clauses)
-    query_sql = sql.SQL(
-        """
+    where_sql = " AND ".join(where_clauses)
+    query_sql = f"""
         SELECT timestamp, username, content, msg_type
-        FROM danmaku
+        FROM danmaku_all
         WHERE {where_sql}
         {order_limit_sql}
         """
-    ).format(where_sql=where_sql, order_limit_sql=order_limit_sql)
     if limit_value is None:
         raise ValueError("Invalid limit value")
-    params.append(limit_value)
+    params = [*params, limit_value]
 
-    with psycopg.connect(dsn) as conn:
-        with conn.cursor() as cur:
-            cur.execute(query_sql, params)
-            rows = cur.fetchall()
+    with DataDb(data) as db:
+        rows = db.query(query_sql, params)
 
     return [
         SearchResult(
-            timestamp=row[0],
+            timestamp=parse_timestamp(row[0]),
             username=row[1],
             content=row[2],
             msg_type=row[3],
@@ -108,13 +105,13 @@ def run_search(
     to_date: str | None = None,
     last: int | None = None,
     first: int | None = None,
-    dsn: str | None = None,
+    data: str | None = None,
 ) -> list[SearchResult]:
     """Run search command."""
-    resolved_room, resolved_dsn = resolve_runtime(room, dsn)
+    resolved_room, resolved_data = resolve_runtime(room, data)
 
     return search(
-        resolved_dsn,
+        resolved_data,
         resolved_room,
         query,
         username,

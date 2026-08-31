@@ -29,9 +29,12 @@ def _run_with_cli_error(func: Callable[[], _T]) -> _T:
 @app.command
 def rank(
     room: Annotated[str, Parameter(name=("-r", "--room"), help="Room ID")],
-    dsn: Annotated[
+    data: Annotated[
         str | None,
-        Parameter(name="--dsn", help="PostgreSQL DSN (or use DYKIT_DSN env)"),
+        Parameter(
+            name="--data",
+            help="SQLite run file or directory of run files (default: ./dycap-data)",
+        ),
     ] = None,
     top: Annotated[int, Parameter(name="--top", help="Number of results")] = 10,
     mode: Annotated[
@@ -79,7 +82,7 @@ def rank(
             to_date,
             last,
             first,
-            dsn,
+            data,
         )
     )
 
@@ -98,9 +101,12 @@ def rank(
 @app.command
 def cluster(
     room: Annotated[str, Parameter(name=("-r", "--room"), help="Room ID")],
-    dsn: Annotated[
+    data: Annotated[
         str | None,
-        Parameter(name="--dsn", help="PostgreSQL DSN (or use DYKIT_DSN env)"),
+        Parameter(
+            name="--data",
+            help="SQLite run file or directory of run files (default: ./dycap-data)",
+        ),
     ] = None,
     threshold: Annotated[
         float,
@@ -146,7 +152,7 @@ def cluster(
             last,
             first,
             days,
-            dsn,
+            data,
         )
     )
 
@@ -164,12 +170,15 @@ def cluster(
 @app.command
 def search(
     room: Annotated[str, Parameter(name=("-r", "--room"), help="Room ID")],
-    dsn: Annotated[
+    data: Annotated[
         str | None,
-        Parameter(name="--dsn", help="PostgreSQL DSN (or use DYKIT_DSN env)"),
+        Parameter(
+            name="--data",
+            help="SQLite run file or directory of run files (default: ./dycap-data)",
+        ),
     ] = None,
     content: Annotated[
-        str | None, Parameter(name="--content", help="Search content (ILIKE)")
+        str | None, Parameter(name="--content", help="Search content (LIKE)")
     ] = None,
     username: Annotated[str | None, Parameter(name="--user", help="Filter by username")] = None,
     user_id: Annotated[str | None, Parameter(name="--user-id", help="Filter by user ID")] = None,
@@ -202,7 +211,7 @@ def search(
             to_time,
             last,
             first,
-            dsn,
+            data,
         )
     )
 

@@ -102,13 +102,7 @@ def render_console_line(message: DanmuMessage, room_display: str | None = None) 
     line.append(f"{icon} ")
 
     if message.msg_type == MessageType.CHATMSG:
-        color_code = None
-        if message.raw_data is not None:
-            color_code = message.raw_data.get("col")
-            if color_code is None:
-                color_code = message.raw_data.get("color")
-        style = _style_from_danmu_color(None if color_code is None else str(color_code))
-        line.append(text, style=style)
+        line.append(text, style=_style_from_danmu_color(message.color))
         return line
 
     if message.msg_type == MessageType.UENTER:

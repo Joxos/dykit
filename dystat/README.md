@@ -1,6 +1,6 @@
 # dystat
 
-Douyu Statistics Tools - analyze danmu data with rank, cluster, and search.
+Douyu Statistics Tools - analyze danmu run files with rank, cluster, and search.
 
 ## Installation
 
@@ -11,13 +11,7 @@ pip install dystat
 ## Quick Start
 
 ```bash
-# Set DSN
-export DYKIT_DSN="postgresql://user:pass@localhost:5432/douyu"
-
-# Show version
-dystat --version
-
-# Rank users by message count
+# Rank users by message count (default data: ./dycap-data)
 dystat rank -r 6657 --top 10
 
 # Rank content (repeated messages)
@@ -30,8 +24,16 @@ dystat cluster -r 6657 --threshold 0.5
 dystat search -r 6657 --content "hello"
 dystat search -r 6657 --user "username"
 
-
+# Analyze a specific run file, or a directory of run files
+dystat rank -r 6657 --data backup/20260816_6657.db
+dystat rank -r 6657 --data backup/        # union across all run files
 ```
+
+## Data source
+
+`--data` accepts a single SQLite run file (produced by `dycap`) or a
+directory of run files. Directory mode unions all `*.db` files in the
+directory, so accumulated runs are analyzed together. Default: `./dycap-data`.
 
 ## Commands
 
@@ -48,6 +50,7 @@ dystat rank -r 6657 --days 7                   # Last 7 days
 
 Options:
 - `-r, --room ROOM` - Room ID (required)
+- `--data PATH` - Run file or directory of run files (default: `./dycap-data`)
 - `--top N` - Number of results (default: 10)
 - `--by user|content` - Rank mode (default: user)
 - `--type TYPE` - Message type (default: chatmsg)
@@ -68,42 +71,30 @@ dystat cluster -r 6657 --limit 100             # More source messages
 
 Options:
 - `-r, --room ROOM` - Room ID (required)
+- `--data PATH` - Run file or directory of run files (default: `./dycap-data`)
 - `--threshold FLOAT` - Similarity threshold 0-1 (default: 0.5)
 - `--limit N` - Source message limit (default: 50)
 - `--type TYPE` - Message type (default: chatmsg)
-- `--from TIME` - Start time (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM:SS`)
-- `--to TIME` - End time (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM:SS`, inclusive)
-- `--last N` - Use latest N messages as source window
-- `--first N` - Use earliest N messages as source window
-- `--days N` - Limit to recent N days
+- `--from TIME` / `--to TIME` / `--last N` / `--first N` / `--days N`
 
 ### search
 
 Search messages with filters.
 
 ```bash
-dystat search -r 6657 --content "hello"        # ILIKE search
+dystat search -r 6657 --content "hello"        # LIKE search
 dystat search -r 6657 --user "username"        # By username
 dystat search -r 6657 --type dgb               # By message type
 ```
 
 Options:
 - `-r, --room ROOM` - Room ID (required)
-- `--content TEXT` - Content filter (ILIKE)
+- `--data PATH` - Run file or directory of run files (default: `./dycap-data`)
+- `--content TEXT` - Content filter (LIKE)
 - `--user USERNAME` - Username exact match
 - `--user-id UID` - User ID exact match
 - `--type TYPE` - Message type
-- `--from TIME` - Start time (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM:SS`)
-- `--to TIME` - End time (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM:SS`, inclusive)
-- `--last N` - Return latest N messages (default window size: 100 when `--first/--last` omitted)
-- `--first N` - Return earliest N messages
-
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `DYKIT_DSN` | PostgreSQL connection string |
-| `DYSTAT_DSN` | Alias for DYKIT_DSN |
+- `--from TIME` / `--to TIME` / `--last N` / `--first N`
 
 ## License
 
