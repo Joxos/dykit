@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from dycommon.time_rules import WINDOW_CONFLICT_FIRST_LAST
-from dycommon.timestamps import format_timestamp
+from dycommon.timestamps import format_timestamp, parse_timestamp
 from dystat.db import DataDb
 from dystat.query_filters import build_common_filters, parse_order_limit
 
@@ -161,4 +161,6 @@ class TestQueryFilters:
             from_date=None, to_date=None, days=3,
         )
         assert where == ["room_id = ?", "timestamp >= ?"]
-        assert params[1] == format_timestamp(datetime.now() - timedelta(days=3))
+        # Tolerance: build_common_filters computes now() internally.
+        cutoff = parse_timestamp(params[1])
+        assert abs((datetime.now() - timedelta(days=3) - cutoff).total_seconds()) < 5

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -11,7 +12,13 @@ from dycommon.timestamps import format_timestamp
 from scripts.scan_runs import scan
 
 
-def _make_run_file(path: Path, *, ended: bool, started_minutes_ago: int) -> None:
+def _make_run_file(
+    path: Path,
+    *,
+    ended: bool,
+    started_minutes_ago: int,
+    mtime_minutes_ago: int | None = None,
+) -> None:
     conn = sqlite3.connect(str(path))
     conn.executescript(
         """
@@ -27,6 +34,10 @@ def _make_run_file(path: Path, *, ended: bool, started_minutes_ago: int) -> None
     conn.commit()
     conn.close()
 
+    # Default: mtime = start time (a file that stopped being written).
+    mtime = started if mtime_minutes_ago is None else datetime.now() - timedelta(minutes=mtime_minutes_ago)
+    os.utime(path, (mtime.timestamp(), mtime.timestamp()))
+
 
 def test_completed_runs_are_not_interrupted(tmp_path: Path) -> None:
     _make_run_file(tmp_path / "6657_ok.db", ended=True, started_minutes_ago=600)
@@ -35,6 +46,18 @@ def test_completed_runs_are_not_interrupted(tmp_path: Path) -> None:
 
 def test_recent_run_without_ended_at_is_active_not_interrupted(tmp_path: Path) -> None:
     _make_run_file(tmp_path / "6657_active.db", ended=False, started_minutes_ago=5)
+    assert scan(tmp_path, timedelta(minutes=60)) == []
+
+
+def test_long_running_active_run_is_not_interrupted(tmp_path: Path) -> None:
+    # A run started 10 hours ago but still being written (fresh mtime) is
+    # active - start age alone must not flag it.
+    _make_run_file(
+        tmp_path / "6657_long.db",
+        ended=False,
+        started_minutes_ago=600,
+        mtime_minutes_ago=0,
+    )
     assert scan(tmp_path, timedelta(minutes=60)) == []
 
 

@@ -31,11 +31,23 @@ DEFAULT_MIN_AGE_MINUTES = 60
 
 
 def scan(data_dir: Path, min_age: timedelta) -> list[dict[str, str]]:
-    """Return run files whose meta lacks ended_at and that are too old to be active."""
+    """Return run files whose meta lacks ended_at and that stopped being written.
+
+    Active runs are detected by file mtime (they are written every few
+    seconds), not by start time - a run may legitimately last many hours.
+    """
     interrupted: list[dict[str, str]] = []
     cutoff = datetime.now() - min_age
 
     for db_file in sorted(data_dir.glob("*.db")):
+        # A freshly written file is an active run, however old it is.
+        try:
+            mtime = datetime.fromtimestamp(db_file.stat().st_mtime)
+        except OSError:
+            continue
+        if mtime > cutoff:
+            continue
+
         try:
             conn = sqlite3.connect(str(db_file))
             rows = dict(conn.execute("SELECT key, value FROM meta").fetchall())
@@ -52,8 +64,8 @@ def scan(data_dir: Path, min_age: timedelta) -> list[dict[str, str]]:
                 started = parse_timestamp(rows["started_at"])
             except ValueError:
                 started = None
-        if started is None or started > cutoff:
-            continue  # very recent start -> likely an active run
+        if started is None:
+            continue  # no start info; cannot judge
 
         interrupted.append(
             {
