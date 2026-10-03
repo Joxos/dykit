@@ -1,11 +1,8 @@
-"""Unit tests for dyproto protocol codec primitives (no network required)."""
+"""Unit tests for the protocol codec primitives (no network required)."""
 
 from __future__ import annotations
 
-from dyproto.constants import CLIENT_MSG_TYPE
-from dyproto.protocol import build_packet_header, parse_packet_header, parse_packet_length
-
-from dyproto import (
+from dykit.protocol import (
     MAX_PACKET_SIZE,
     MIN_PACKET_SIZE,
     PACKET_HEADER_SIZE,
@@ -16,6 +13,8 @@ from dyproto import (
     encode_message,
     serialize_message,
 )
+from dykit.protocol.codec import build_packet_header, parse_packet_header, parse_packet_length
+from dykit.protocol.constants import CLIENT_MSG_TYPE
 
 
 class TestKeyValueSerialization:
@@ -58,7 +57,9 @@ class TestBinaryCodec:
 
     def test_decode_length_duplicate_mismatch_returns_none(self) -> None:
         header = build_packet_header(
-            PacketHeader(packet_length=20, packet_length_dup=21, msg_type=689, encrypt_flag=0, reserved=0)
+            PacketHeader(
+                packet_length=20, packet_length_dup=21, msg_type=689, encrypt_flag=0, reserved=0
+            )
         )
         assert decode_message(header + b"x" * 20) is None
 
@@ -81,7 +82,11 @@ class TestBinaryCodec:
 
     def test_packet_header_build_parse_roundtrip(self) -> None:
         header = PacketHeader(
-            packet_length=100, packet_length_dup=100, msg_type=CLIENT_MSG_TYPE, encrypt_flag=0, reserved=0
+            packet_length=100,
+            packet_length_dup=100,
+            msg_type=CLIENT_MSG_TYPE,
+            encrypt_flag=0,
+            reserved=0,
         )
         parsed = parse_packet_header(build_packet_header(header))
         assert parsed is not None
@@ -108,7 +113,9 @@ class TestMessageBuffer:
         buffer = MessageBuffer()
         msg1 = {"type": "chatmsg", "txt": "first"}
         msg2 = {"type": "dgb", "gfn": "second"}
-        buffer.add_data(encode_message(serialize_message(msg1)) + encode_message(serialize_message(msg2)))
+        buffer.add_data(
+            encode_message(serialize_message(msg1)) + encode_message(serialize_message(msg2))
+        )
         assert buffer.get_messages() == [msg1, msg2]
 
     def test_packet_split_across_frames(self) -> None:

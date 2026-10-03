@@ -24,7 +24,7 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from dycommon.timestamps import parse_timestamp
+from dykit.schema import parse_timestamp
 
 DEFAULT_DATA_DIR = "dycap-data"
 DEFAULT_MIN_AGE_MINUTES = 60
@@ -81,7 +81,11 @@ def scan(data_dir: Path, min_age: timedelta) -> list[dict[str, str]]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data", default=DEFAULT_DATA_DIR, help=f"run files directory (default: {DEFAULT_DATA_DIR})")
+    parser.add_argument(
+        "--data",
+        default=DEFAULT_DATA_DIR,
+        help=f"run files directory (default: {DEFAULT_DATA_DIR})",
+    )
     parser.add_argument(
         "--min-age-minutes",
         type=int,

@@ -1,7 +1,10 @@
-"""Live smoke test - collect danmu from a real Douyu room for N seconds.
+"""Live smoke probe - collect danmu from a real Douyu room for N seconds.
+
+Exploration only (see ``scripts/README.md``): needs a live room, so it is not
+part of the test suite.
 
 Usage:
-    uv run python scripts/live_smoke.py [--room 6657] [--seconds 45] [--ws-url URL] [--db out.db]
+    uv run python scripts/probes/live_smoke.py [--room 6657] [--seconds 45] [--ws-url URL] [--db out.db]
 
 With --db, messages are written to a per-run SQLite file (cleanly closed,
 meta.ended_at set); without it, messages print to the console.
@@ -12,12 +15,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import sys
 from collections import Counter
 
-from dycap.collector import AsyncCollector
-from dycap.storage import ConsoleStorage, SQLiteStorage
-from dycap.types import DanmuMessage
+from dykit.collect import AsyncCollector, ConsoleStorage, DanmuMessage, SQLiteStorage
 
 
 async def _run(room: str, seconds: float, ws_url: str | None, db: str | None) -> int:
@@ -29,18 +31,13 @@ async def _run(room: str, seconds: float, ws_url: str | None, db: str | None) ->
         received += 1
         by_type[message.msg_type.value] += 1
 
-    if db is not None:
-        storage = SQLiteStorage(db, room_id=room)
-    else:
-        storage = ConsoleStorage()
+    storage = SQLiteStorage(db, room_id=room) if db is not None else ConsoleStorage()
 
     async with storage:
         collector = AsyncCollector(room, storage, ws_url=ws_url, message_callback=on_message)
         task = asyncio.create_task(collector.connect())
-        try:
+        with contextlib.suppress(KeyboardInterrupt):
             await asyncio.sleep(seconds)
-        except KeyboardInterrupt:
-            pass
         await collector.stop()
         try:
             await task

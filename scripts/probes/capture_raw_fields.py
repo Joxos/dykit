@@ -1,7 +1,10 @@
-"""Capture raw payload field keys per message type from a live Douyu room.
+"""Probe: raw payload field keys per message type, from a live Douyu room.
+
+Exploration only (see ``scripts/README.md``). Originally used to design the
+run-file columns; re-derive it if Douyu adds message types.
 
 Usage:
-    uv run python scripts/capture_raw_fields.py [--room 6657] [--seconds 60]
+    uv run python scripts/probes/capture_raw_fields.py [--room 6657] [--seconds 60]
 """
 
 from __future__ import annotations
@@ -11,8 +14,7 @@ import asyncio
 import sys
 from collections import defaultdict
 
-from dycap.collector import AsyncCollector
-from dycap.storage.base import StorageHandler
+from dykit.collect import AsyncCollector, StorageHandler
 
 
 class _NullStorage(StorageHandler):

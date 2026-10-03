@@ -1,4 +1,8 @@
-"""Smoke tests over real SQLite run files (no external database needed)."""
+"""End-to-end smoke tests over real SQLite run files.
+
+Cross-layer: capture writes run files, stats reads them, both CLIs run for
+real. No network and no external database are involved.
+"""
 
 from __future__ import annotations
 
@@ -8,24 +12,17 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from dycap.cli import collect
-from dycap.collector import AsyncCollector
-from dycap.storage import SQLiteStorage
-from dycap.types import DanmuMessage
-from dystat.cli import cli
 
-from dyproto import MessageType
+from dykit.collect.cli import app as capture_app
+from dykit.collect.collector import AsyncCollector
+from dykit.collect.storage import SQLiteStorage
+from dykit.collect.types import DanmuMessage
+from dykit.protocol import MessageType
+from dykit.stats.cli import app as stats_app
 
-from .cli_test_runner import CliRunner
+from ..cli_test_runner import CliRunner
 
 ROOM = "6657"
-
-
-@pytest.fixture(autouse=True)
-def _local_room(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep room resolution deterministic in smoke tests (no network)."""
-    monkeypatch.setattr("dycap.cli.resolve_room", lambda room: room)
-    monkeypatch.setattr("dystat.runtime.resolve_room", lambda room: room)
 
 
 def _message(
@@ -67,7 +64,14 @@ def seeded_dir(tmp_path: Path) -> Path:
                 _message("Alice", "冲冲冲"),
                 _message("Bob", "冲冲冲"),
                 _message("Alice", "666"),
-                _message("GiftUser", "送礼", MessageType.DGB, gift_id="g1", gift_count=3, gift_name="火箭"),
+                _message(
+                    "GiftUser",
+                    "送礼",
+                    MessageType.DGB,
+                    gift_id="g1",
+                    gift_count=3,
+                    gift_name="火箭",
+                ),
             ],
         )
     )
@@ -84,20 +88,20 @@ def seeded_dir(tmp_path: Path) -> Path:
 
 
 @pytest.mark.smoke
-def test_smoke_dystat_single_file(runner: CliRunner, seeded_dir: Path) -> None:
+def test_smoke_stats_single_file(runner: CliRunner, seeded_dir: Path) -> None:
     run_file = seeded_dir / "6657_20260307_100000.db"
-    result = runner.invoke(cli, ["rank", "--data", str(run_file), "-r", ROOM, "--top", "5"])
+    result = runner.invoke(stats_app, ["rank", "--data", str(run_file), "-r", ROOM, "--top", "5"])
     assert result.exit_code == 0, result.output
     assert "Alice" in result.output
 
     result_search = runner.invoke(
-        cli, ["search", "--data", str(run_file), "-r", ROOM, "--content", "冲冲冲"]
+        stats_app, ["search", "--data", str(run_file), "-r", ROOM, "--content", "冲冲冲"]
     )
     assert result_search.exit_code == 0, result_search.output
     assert "Found" in result_search.output
 
     result_cluster = runner.invoke(
-        cli,
+        stats_app,
         ["cluster", "--data", str(run_file), "-r", ROOM, "--limit", "50", "--threshold", "0.5"],
     )
     assert result_cluster.exit_code == 0, result_cluster.output
@@ -105,15 +109,15 @@ def test_smoke_dystat_single_file(runner: CliRunner, seeded_dir: Path) -> None:
 
 
 @pytest.mark.smoke
-def test_smoke_dystat_directory_union(runner: CliRunner, seeded_dir: Path) -> None:
+def test_smoke_stats_directory_union(runner: CliRunner, seeded_dir: Path) -> None:
     # Alice appears in both run files (2 + 1 messages).
-    result = runner.invoke(cli, ["rank", "--data", str(seeded_dir), "-r", ROOM, "--top", "5"])
+    result = runner.invoke(stats_app, ["rank", "--data", str(seeded_dir), "-r", ROOM, "--top", "5"])
     assert result.exit_code == 0, result.output
     assert "Alice" in result.output
     assert "Carol" in result.output  # only in the second run file
 
     result_search = runner.invoke(
-        cli, ["search", "--data", str(seeded_dir), "-r", ROOM, "--content", "再来一次"]
+        stats_app, ["search", "--data", str(seeded_dir), "-r", ROOM, "--content", "再来一次"]
     )
     assert result_search.exit_code == 0, result_search.output
     assert "再来一次" in result_search.output
@@ -127,15 +131,18 @@ class _FakeCollector:
         type_filter: list[str] | None = None,
         type_exclude: list[str] | None = None,
         message_callback: Any | None = None,
+        ws_url: str | None = None,
+        sink_factory: Any | None = None,
     ) -> None:
         self.room_id = room_id
         self.storage = storage
         self.type_filter = type_filter
         self.type_exclude = type_exclude
         self.message_callback = message_callback
+        self.rotations = 0
 
     async def connect(self) -> None:
-        message = _message("SmokeCLI", "dycap-cli-smoke")
+        message = _message("SmokeCLI", "capture-cli-smoke")
         await self.storage.save(message)
         if self.message_callback is not None:
             self.message_callback(message)
@@ -145,59 +152,62 @@ class _FakeCollector:
 
 
 @pytest.mark.smoke
-def test_smoke_dycap_cli_sqlite(
+def test_smoke_capture_cli_sqlite(
     runner: CliRunner,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("dycap.cli.AsyncCollector", _FakeCollector)
+    monkeypatch.setattr("dykit.collect.cli.AsyncCollector", _FakeCollector)
     out = tmp_path / "cli_smoke.db"
 
-    result = runner.invoke(collect, ["--storage", "sqlite", "-o", str(out), "-r", ROOM])
+    result = runner.invoke(capture_app, ["--storage", "sqlite", "-o", str(out), "-r", ROOM])
     assert result.exit_code == 0, result.output
 
     import sqlite3
 
     conn = sqlite3.connect(str(out))
     try:
-        count = conn.execute("SELECT COUNT(*) FROM danmaku WHERE content = ?", ("dycap-cli-smoke",)).fetchone()
+        count = conn.execute(
+            "SELECT COUNT(*) FROM danmaku WHERE content = ?", ("capture-cli-smoke",)
+        ).fetchone()
         meta = dict(conn.execute("SELECT key, value FROM meta").fetchall())
     finally:
         conn.close()
-    assert count is not None and count[0] >= 1
+    assert count is not None
+    assert count[0] >= 1
     assert meta["ended_at"] != ""  # cleanly closed run
 
 
 @pytest.mark.smoke
-def test_smoke_dycap_cli_csv(
+def test_smoke_capture_cli_csv(
     runner: CliRunner,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("dycap.cli.AsyncCollector", _FakeCollector)
+    monkeypatch.setattr("dykit.collect.cli.AsyncCollector", _FakeCollector)
     output_file = tmp_path / "cli_smoke.csv"
 
-    result = runner.invoke(collect, ["--storage", "csv", "-o", str(output_file), "-r", ROOM])
+    result = runner.invoke(capture_app, ["--storage", "csv", "-o", str(output_file), "-r", ROOM])
     assert result.exit_code == 0, result.output
     text = output_file.read_text(encoding="utf-8")
-    assert "dycap-cli-smoke" in text
+    assert "capture-cli-smoke" in text
 
 
 @pytest.mark.smoke
-def test_smoke_dycap_cli_console(
+def test_smoke_capture_cli_console(
     runner: CliRunner,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("dycap.cli.AsyncCollector", _FakeCollector)
+    monkeypatch.setattr("dykit.collect.cli.AsyncCollector", _FakeCollector)
 
-    result = runner.invoke(collect, ["--storage", "console", "-r", ROOM])
+    result = runner.invoke(capture_app, ["--storage", "console", "-r", ROOM])
     assert result.exit_code == 0, result.output
-    assert "dycap-cli-smoke" in result.output
+    assert "capture-cli-smoke" in result.output
     assert f"[{ROOM}]" in result.output
 
 
 @pytest.mark.smoke
-def test_smoke_dycap_storage_end_to_end(tmp_path: Path) -> None:
+def test_smoke_capture_storage_end_to_end(tmp_path: Path) -> None:
     async def run() -> None:
         path = tmp_path / "e2e.db"
         async with SQLiteStorage(path, room_id=ROOM) as storage:

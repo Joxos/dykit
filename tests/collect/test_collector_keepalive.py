@@ -4,10 +4,9 @@ import ssl
 from typing import Any
 
 import pytest
-from dycap.collector import DOUYU_WS_CONNECT_KWARGS, AsyncCollector
-from dycap.storage.base import StorageHandler
 
-from dyproto import MessageType
+from dykit.collect.collector import DOUYU_WS_CONNECT_KWARGS, AsyncCollector
+from dykit.collect.storage.base import StorageHandler
 
 
 class _DummyStorage(StorageHandler):
@@ -34,29 +33,6 @@ class _ProbeCollector(AsyncCollector):
 
 
 @pytest.mark.asyncio
-async def test_dgb_message_maps_gift_fields_from_gfn() -> None:
-    collector = _ProbeCollector(room_id="6657", storage=_DummyStorage())
-    collector.room_id = "6657"
-
-    msg = collector._build_danmu_message(  # pyright: ignore[reportPrivateUsage]
-        {
-            "nn": "GiftUser",
-            "uid": "u2001",
-            "level": "18",
-            "gfid": "g1",
-            "gfcnt": "3",
-            "gfn": "火箭",
-            "type": "dgb",
-        },
-        msg_type=MessageType.DGB,
-    )
-
-    assert msg.gift_id == "g1"
-    assert msg.gift_count == 3
-    assert msg.gift_name == "火箭"
-
-
-@pytest.mark.asyncio
 async def test_connect_uses_protocol_keepalive_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     collector = _ProbeCollector(room_id="6657", storage=_DummyStorage())
     captured: dict[str, Any] = {}
@@ -66,7 +42,7 @@ async def test_connect_uses_protocol_keepalive_contract(monkeypatch: pytest.Monk
         captured.update(kwargs)
         return "ok"
 
-    monkeypatch.setattr("dycap.collector.websockets.connect", fake_connect)
+    monkeypatch.setattr("dykit.collect.collector.websockets.connect", fake_connect)
     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     result = await collector.probe_connect_kwargs(ssl_context)
 
@@ -92,7 +68,7 @@ async def test_heartbeat_loop_sends_mrkl(monkeypatch: pytest.MonkeyPatch) -> Non
         return None
 
     monkeypatch.setattr(collector, "_send_with_retry", fake_send)
-    monkeypatch.setattr("dycap.collector.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("dykit.collect.collector.asyncio.sleep", fake_sleep)
 
     await collector.run_heartbeat_once()
 

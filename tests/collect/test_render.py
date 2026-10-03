@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from dycap.render import render_console_line
-from dycap.types import DanmuMessage, MessageType
+from dykit.collect.render import render_console_line
+from dykit.collect.types import DanmuMessage, MessageType
 
 
 def _chat_message(*, col: str | None) -> DanmuMessage:

@@ -7,10 +7,10 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from dycap.storage import SQLiteStorage
-from dycap.types import DanmuMessage
 
-from dyproto import MessageType
+from dykit.collect.storage import SQLiteStorage
+from dykit.collect.types import DanmuMessage
+from dykit.protocol import MessageType
 
 ROOM = "6657"
 
@@ -41,10 +41,13 @@ def _message(username: str = "alice", content: str = "hello") -> DanmuMessage:
     )
 
 
-def _rows(path: Path) -> list[tuple]:
+def _rows(path: Path) -> list[tuple[str, str, str]]:
     conn = sqlite3.connect(str(path))
     try:
-        return conn.execute("SELECT username, content, timestamp FROM danmaku ORDER BY id").fetchall()
+        rows: list[tuple[str, str, str]] = conn.execute(
+            "SELECT username, content, timestamp FROM danmaku ORDER BY id"
+        ).fetchall()
+        return rows
     finally:
         conn.close()
 
@@ -86,7 +89,8 @@ async def test_save_flushes_on_batch_and_close(tmp_path: Path) -> None:
     meta = _meta(path)
     assert "ended_at" in meta
     assert meta["messages"] == "3"
-    assert storage.stats == {"messages": 3, "flushes": 2}
+    assert meta["flush_errors"] == "0"
+    assert storage.stats == {"messages": 3, "committed": 3, "flushes": 2, "flush_errors": 0}
 
 
 @pytest.mark.asyncio
@@ -102,12 +106,12 @@ async def test_refuses_existing_file(tmp_path: Path) -> None:
 async def test_interrupted_run_has_no_ended_at(tmp_path: Path) -> None:
     path = tmp_path / "interrupted.db"
     storage = SQLiteStorage(path, room_id=ROOM, batch_size=1, flush_interval=60.0)
-    await storage.__aenter__()  # noqa: PLC2801
+    await storage.__aenter__()
     await storage.save(_message())
     # Simulate a killed process: never call close(). Cancel the flush task
     # only to keep the test event loop clean.
-    assert storage._flush_task is not None
-    storage._flush_task.cancel()
+    assert storage._flush_task is not None  # pyright: ignore[reportPrivateUsage]
+    storage._flush_task.cancel()  # pyright: ignore[reportPrivateUsage]
 
     meta = _meta(path)
     assert meta["room"] == ROOM
@@ -122,7 +126,7 @@ async def test_extracted_fields_are_columns_and_stripped_from_raw_data(tmp_path:
     # leftover fields (deduplicated) so nothing is stored twice.
     path = tmp_path / "run.db"
     storage = SQLiteStorage(path, room_id=ROOM, batch_size=1)
-    await storage.__aenter__()  # noqa: PLC2801
+    await storage.__aenter__()
     await storage.save(_message())
     await storage.close()
 
@@ -168,7 +172,7 @@ async def test_raw_data_none_when_all_fields_extracted(tmp_path: Path) -> None:
         raw_data={"type": "chatmsg", "txt": "hello", "col": "2", "level": "5"},
     )
     storage = SQLiteStorage(path, room_id=ROOM, batch_size=1)
-    await storage.__aenter__()  # noqa: PLC2801
+    await storage.__aenter__()
     await storage.save(message)
     await storage.close()
 
@@ -186,7 +190,7 @@ async def test_unicode_and_nul_bytes_stored_verbatim(tmp_path: Path) -> None:
     path = tmp_path / "run.db"
     message = _message(username="测试", content="包含\x00空字节和emoji🎉")
     storage = SQLiteStorage(path, room_id=ROOM, batch_size=1)
-    await storage.__aenter__()  # noqa: PLC2801
+    await storage.__aenter__()
     await storage.save(message)
     await storage.close()
 

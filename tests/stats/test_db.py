@@ -1,4 +1,4 @@
-"""Unit tests for dystat SQLite data access (single file + directory union)."""
+"""Unit tests for stats SQLite data access (single file + directory union)."""
 
 from __future__ import annotations
 
@@ -7,41 +7,20 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
-from dycommon.time_rules import WINDOW_CONFLICT_FIRST_LAST
-from dycommon.timestamps import format_timestamp, parse_timestamp
-from dystat.db import DataDb
-from dystat.query_filters import build_common_filters, parse_order_limit
 
-DDL = """
-CREATE TABLE danmaku (
-    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp            TEXT NOT NULL,
-    room_id              TEXT NOT NULL,
-    msg_type             TEXT NOT NULL,
-    user_id              TEXT,
-    username             TEXT,
-    user_level           INTEGER,
-    avatar_url           TEXT,
-    color                TEXT,
-    content              TEXT,
-    badge_level          INTEGER,
-    badge_name           TEXT,
-    badge_room_id        TEXT,
-    gift_id              TEXT,
-    gift_count           INTEGER,
-    gift_name            TEXT,
-    gift_hits            INTEGER,
-    gift_receiver_uid    TEXT,
-    gift_receiver_name   TEXT,
-    noble_level          INTEGER,
-    client_type          TEXT,
-    raw_data             TEXT
-);
-CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-"""
+from dykit.schema import create_danmaku_table_sql, format_timestamp, parse_timestamp
+from dykit.stats.db import DataDb
+from dykit.stats.filters import WINDOW_CONFLICT_FIRST_LAST, build_common_filters, parse_order_limit
+
+# The reader is exercised against the *real* run-file schema (single source of
+# truth in dykit.schema), never against a hand-written copy of the DDL.
+DDL = (
+    create_danmaku_table_sql()
+    + "\nCREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);\n"
+)
 
 
-def _create_run_file(path: Path, rows: list[tuple]) -> None:
+def _create_run_file(path: Path, rows: list[tuple[str, str, str, str, str]]) -> None:
     conn = sqlite3.connect(str(path))
     try:
         conn.executescript(DDL)
@@ -66,9 +45,7 @@ class TestDataDbFileMode:
 
         with DataDb(file) as db:
             assert db.query("SELECT COUNT(*) FROM danmaku_all")[0][0] == 3
-            rows = db.query(
-                "SELECT username FROM danmaku_all WHERE room_id = ?", ("6657",)
-            )
+            rows = db.query("SELECT username FROM danmaku_all WHERE room_id = ?", ("6657",))
             assert len(rows) == 3
 
     def test_invalid_path_raises(self, tmp_path: Path) -> None:
@@ -109,7 +86,8 @@ class TestSchemaCompat:
         # file with additional columns (e.g. produced by a future format)
         # stays readable.
         conn = sqlite3.connect(str(tmp_path / "future.db"))
-        conn.executescript(DDL.replace("raw_data             TEXT", "raw_data             TEXT, extra TEXT"))
+        conn.executescript(DDL)
+        conn.execute("ALTER TABLE danmaku ADD COLUMN extra TEXT")
         conn.execute(
             "INSERT INTO danmaku (timestamp, room_id, msg_type, username, content, raw_data, extra) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -138,16 +116,24 @@ class TestQueryFilters:
 
     def test_common_filters_basic(self) -> None:
         where, params = build_common_filters(
-            room="6657", msg_type="chatmsg", username="alice", user_id=None,
-            from_date=None, to_date=None,
+            room="6657",
+            msg_type="chatmsg",
+            username="alice",
+            user_id=None,
+            from_date=None,
+            to_date=None,
         )
         assert where == ["room_id = ?", "msg_type = ?", "username = ?"]
         assert params == ["6657", "chatmsg", "alice"]
 
     def test_common_filters_time_window(self) -> None:
         where, params = build_common_filters(
-            room="6657", msg_type=None, username=None, user_id=None,
-            from_date="2026-03-01", to_date="2026-03-07",
+            room="6657",
+            msg_type=None,
+            username=None,
+            user_id=None,
+            from_date="2026-03-01",
+            to_date="2026-03-07",
         )
         assert "timestamp >= ?" in where
         assert "timestamp < ?" in where
@@ -157,10 +143,15 @@ class TestQueryFilters:
 
     def test_common_filters_days(self) -> None:
         where, params = build_common_filters(
-            room="6657", msg_type=None, username=None, user_id=None,
-            from_date=None, to_date=None, days=3,
+            room="6657",
+            msg_type=None,
+            username=None,
+            user_id=None,
+            from_date=None,
+            to_date=None,
+            days=3,
         )
         assert where == ["room_id = ?", "timestamp >= ?"]
         # Tolerance: build_common_filters computes now() internally.
-        cutoff = parse_timestamp(params[1])
+        cutoff = parse_timestamp(str(params[1]))
         assert abs((datetime.now() - timedelta(days=3) - cutoff).total_seconds()) < 5

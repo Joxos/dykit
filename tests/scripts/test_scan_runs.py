@@ -7,8 +7,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from dycommon.timestamps import format_timestamp
-
+from dykit.schema import format_timestamp
 from scripts.scan_runs import scan
 
 
@@ -27,15 +26,24 @@ def _make_run_file(
     )
     started = datetime.now() - timedelta(minutes=started_minutes_ago)
     conn.execute("INSERT INTO meta (key, value) VALUES (?, ?)", ("room", "6657"))
-    conn.execute("INSERT INTO meta (key, value) VALUES (?, ?)", ("started_at", format_timestamp(started)))
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES (?, ?)", ("started_at", format_timestamp(started))
+    )
     conn.execute("INSERT INTO meta (key, value) VALUES (?, ?)", ("messages", "123"))
     if ended:
-        conn.execute("INSERT INTO meta (key, value) VALUES (?, ?)", ("ended_at", format_timestamp(started + timedelta(minutes=30))))
+        conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?)",
+            ("ended_at", format_timestamp(started + timedelta(minutes=30))),
+        )
     conn.commit()
     conn.close()
 
     # Default: mtime = start time (a file that stopped being written).
-    mtime = started if mtime_minutes_ago is None else datetime.now() - timedelta(minutes=mtime_minutes_ago)
+    mtime = (
+        started
+        if mtime_minutes_ago is None
+        else datetime.now() - timedelta(minutes=mtime_minutes_ago)
+    )
     os.utime(path, (mtime.timestamp(), mtime.timestamp()))
 
 
