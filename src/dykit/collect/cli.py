@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import signal
 import sys
 from collections.abc import Callable
@@ -67,35 +68,59 @@ def _termination_signal_to_keyboardinterrupt(_signum: int, _frame: object) -> No
     raise KeyboardInterrupt
 
 
-async def _run_collector(collector: AsyncCollector, shutdown_event: asyncio.Event) -> None:
-    """Run the collector until it exits or shutdown is requested.
+async def _run_collector(
+    collector: AsyncCollector,
+    shutdown_event: asyncio.Event,
+    rotate_event: asyncio.Event,
+) -> None:
+    """Run the collector until it exits, shutdown is asked for, or SIGHUP.
 
     SIGINT/SIGTERM are routed through ``shutdown_event`` (via
     ``loop.add_signal_handler``) so shutdown is graceful: the run file always
     gets its meta.ended_at marker, no matter when the signal arrives.
+
+    Shutdown cancels the connect task rather than only clearing a flag, so an
+    await stuck in HTTP discovery (up to ~30s of retries) cannot delay exit.
     """
     connect_task = asyncio.create_task(collector.connect())
     shutdown_task = asyncio.create_task(shutdown_event.wait())
-    done, _pending = await asyncio.wait(
-        {connect_task, shutdown_task}, return_when=asyncio.FIRST_COMPLETED
-    )
-    if shutdown_task in done and not connect_task.done():
-        print("Shutting down...")
-        # Ignore further Ctrl+C/SIGTERM during teardown: a second signal
-        # (e.g. an impatient double-press) would interrupt close() and skip
-        # the meta.ended_at marker on platforms without loop signal handlers.
-        try:
-            signal.signal(signal.SIGINT, signal.SIG_IGN)
-            signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        except ValueError:
-            pass
-        try:
-            await collector.stop()
-            await connect_task
-        except asyncio.CancelledError:
-            pass
-        except Exception as exc:  # collector teardown failure after stop
-            print(f"collector teardown: {exc}", file=sys.stderr)
+    rotate_task = asyncio.create_task(rotate_event.wait())
+    pending = {connect_task, shutdown_task, rotate_task}
+    shutdown_requested = False
+    try:
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            if rotate_task in done:
+                print("Rotating to a new run file...")
+                await collector.rotate(reason="SIGHUP")
+                rotate_task = asyncio.create_task(rotate_event.wait())
+                pending.add(rotate_task)
+            if shutdown_task in done:
+                shutdown_requested = True
+                break
+            if connect_task in done:
+                break
+        if shutdown_requested and not connect_task.done():
+            print("Shutting down...")
+            # Ignore further Ctrl+C/SIGTERM during teardown: a second signal
+            # (e.g. an impatient double-press) would interrupt close() and skip
+            # the meta.ended_at marker on platforms without loop signal handlers.
+            try:
+                signal.signal(signal.SIGINT, signal.SIG_IGN)
+                signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            except ValueError:
+                pass
+            try:
+                await collector.stop()  # cancels connect_task
+                with contextlib.suppress(asyncio.CancelledError):
+                    await connect_task
+            except Exception as exc:  # collector teardown failure after stop
+                print(f"collector teardown: {exc}", file=sys.stderr)
+    finally:
+        for task in (shutdown_task, rotate_task):
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 def _make_sqlite_sink_factory(
@@ -258,6 +283,7 @@ async def collect(
     # while use_event_signals stays False - making Ctrl+C unable to exit.
     loop = asyncio.get_running_loop()
     shutdown_event = asyncio.Event()
+    rotate_event = asyncio.Event()
     use_event_signals = False
     try:
         loop.add_signal_handler(signal.SIGINT, shutdown_event.set)
@@ -268,6 +294,15 @@ async def collect(
         loop.add_signal_handler(signal.SIGTERM, shutdown_event.set)
     except NotImplementedError:
         signal.signal(signal.SIGTERM, _termination_signal_to_keyboardinterrupt)
+    # SIGHUP rolls over to a new run file without stopping the socket, so
+    # sharding and archiving never cost a collection gap.
+    hup_installed = False
+    if hasattr(signal, "SIGHUP"):
+        try:
+            loop.add_signal_handler(signal.SIGHUP, rotate_event.set)
+            hup_installed = True
+        except NotImplementedError:
+            pass
 
     type_filter = (
         [token.strip() for token in msg_types_include.split(",") if token.strip()]
@@ -322,10 +357,12 @@ async def collect(
             elif rotate_after > 0:
                 print(f"Sharding: roll over to a new run file every {rotate_after} messages")
         print(f"Collecting from room {room_display}... Press Ctrl+C to stop.")
+        if hup_installed and sink_factory is not None:
+            print("Send SIGHUP to roll over to a new run file without stopping.")
 
         try:
             if use_event_signals:
-                await _run_collector(collector, shutdown_event)
+                await _run_collector(collector, shutdown_event, rotate_event)
             else:
                 await collector.connect()
         except KeyboardInterrupt:

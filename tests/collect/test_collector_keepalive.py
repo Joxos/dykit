@@ -25,11 +25,11 @@ class _ProbeCollector(AsyncCollector):
         await self._heartbeat_loop()
 
     def seed_heartbeat_state(self) -> None:
-        self._running = True
-        self._websocket = object()
+        self._websocket = object()  # pyright: ignore[reportAttributeAccessIssue]
 
     def stop_running(self) -> None:
-        self._running = False
+        """The heartbeat loop ends when the socket goes away."""
+        self._websocket = None
 
 
 @pytest.mark.asyncio
