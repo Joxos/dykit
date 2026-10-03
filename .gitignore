@@ -17,6 +17,8 @@ build/
 # Testing / Coverage
 .pytest_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
 
 # Type checking / Linting
