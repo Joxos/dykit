@@ -12,7 +12,12 @@ import sqlite3
 from pathlib import Path
 
 from dykit.collect.storage.sqlite import ROW_COLUMNS
-from dykit.schema import DANMAKU_VIEW_COLUMNS, SCHEMA_SQL
+from dykit.schema import (
+    DANMAKU_SCHEMA,
+    DANMAKU_VIEW_COLUMNS,
+    DANMAKU_WRITE_COLUMNS,
+    SCHEMA_SQL,
+)
 from dykit.stats.db import DataDb
 
 
@@ -30,9 +35,20 @@ def test_ddl_declares_every_view_column() -> None:
     assert set(DANMAKU_VIEW_COLUMNS) <= _table_columns(SCHEMA_SQL)
 
 
-def test_insert_covers_exactly_the_view_columns() -> None:
+def test_view_exposes_arrival_order() -> None:
+    """`id` is written by SQLite but read by analyses ("newest first")."""
+    assert "id" in DANMAKU_VIEW_COLUMNS
+    assert "id" not in DANMAKU_WRITE_COLUMNS
+
+
+def test_write_columns_match_the_storage_insert() -> None:
     """The writer must not store a column the reader ignores, or vice versa."""
-    assert set(ROW_COLUMNS) == set(DANMAKU_VIEW_COLUMNS)
+    assert set(ROW_COLUMNS) == set(DANMAKU_WRITE_COLUMNS)
+
+
+def test_schema_registry_covers_the_table() -> None:
+    """The view is exactly the declared schema, in the declared order."""
+    assert tuple(column.name for column in DANMAKU_SCHEMA) == DANMAKU_VIEW_COLUMNS
 
 
 def test_stats_reads_a_run_file_written_by_capture(tmp_path: Path) -> None:

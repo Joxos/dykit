@@ -78,7 +78,7 @@ def rank(
         FROM filtered
         {content_guard}
         GROUP BY {group_field}
-        ORDER BY cnt DESC
+        ORDER BY cnt DESC, {group_field}
         LIMIT ?
         """
 

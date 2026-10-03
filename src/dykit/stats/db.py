@@ -27,7 +27,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from types import TracebackType
 
-from ..schema import DANMAKU_VIEW_COLUMNS, columns_sql
+from ..schema import DANMAKU_VIEW_COLUMNS, columns_sql, temp_table_columns_sql
 
 #: SQLite's compiled-in ceiling on ATTACHed databases.
 MAX_ATTACHED = 10
@@ -157,7 +157,7 @@ class DataDb:
         silently breaks anything whose LIMIT is meant to apply globally.
         """
         conn = self._conn_or_raise()
-        conn.execute(f"CREATE TEMP TABLE danmaku_all ({columns_sql(_table_ddl_columns())})")
+        conn.execute(f"CREATE TEMP TABLE danmaku_all ({temp_table_columns_sql()})")
 
         for start in range(0, len(self.files), MAX_ATTACHED):
             batch = self.files[start : start + MAX_ATTACHED]
@@ -206,9 +206,3 @@ class DataDb:
         _exc_tb: TracebackType | None,
     ) -> None:
         self.close()
-
-
-def _table_ddl_columns() -> list[str]:
-    from ..schema import DANMAKU_SCHEMA
-
-    return [column.definition() for column in DANMAKU_SCHEMA if column.name in DANMAKU_VIEW_COLUMNS]

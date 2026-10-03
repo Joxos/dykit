@@ -47,8 +47,9 @@ class Column:
         return f"{self.name} {self.sql_type}"
 
 
-# Ordered as readers see them. `id` is the storage's surrogate key: it is
-# created here but never selected by name (see `DANMAKU_VIEW_COLUMNS`).
+# Ordered as readers see them. `id` is the arrival sequence: the writer never
+# inserts it (AUTOINCREMENT), but readers project and order by it, because
+# "newest first" is a real question a timestamp with ties cannot answer.
 DANMAKU_SCHEMA: tuple[Column, ...] = (
     Column("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
     Column("timestamp", "TEXT NOT NULL"),
@@ -74,13 +75,13 @@ DANMAKU_SCHEMA: tuple[Column, ...] = (
     Column("raw_data", "TEXT"),
 )
 
-# Storage-owned columns that no reader selects by name.
-INTERNAL_COLUMNS = frozenset({column.name for column in DANMAKU_SCHEMA[:1]})
-
-#: The columns a reader projects out of a run file.
-DANMAKU_VIEW_COLUMNS: tuple[str, ...] = tuple(
-    column.name for column in DANMAKU_SCHEMA if column.name not in INTERNAL_COLUMNS
+#: Columns a writer must supply; `id` is assigned by SQLite.
+DANMAKU_WRITE_COLUMNS: tuple[str, ...] = tuple(
+    column.name for column in DANMAKU_SCHEMA if column.name != "id"
 )
+
+#: The columns a reader projects out of a run file (all of them, `id` included).
+DANMAKU_VIEW_COLUMNS: tuple[str, ...] = tuple(column.name for column in DANMAKU_SCHEMA)
 
 # Raw payload keys whose value is already stored in a dedicated column. They
 # are stripped from raw_data at write time; column + raw_data together stay
@@ -137,6 +138,17 @@ def create_danmaku_table_sql() -> str:
 def columns_sql(columns: Sequence[str]) -> str:
     """Comma-separated column list for embedding in a SELECT."""
     return ", ".join(columns)
+
+
+def temp_table_columns_sql() -> str:
+    """Column definitions for a materialised copy of ``danmaku_all``.
+
+    ``id`` is demoted from PRIMARY KEY to a plain INTEGER: a materialised copy
+    holds rows from several run files, whose original ids collide.
+    """
+    return ", ".join(
+        "id INTEGER" if column.name == "id" else column.definition() for column in DANMAKU_SCHEMA
+    )
 
 
 #: Full DDL executed when a run file is opened: danmaku + indexes + meta.
