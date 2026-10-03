@@ -257,6 +257,13 @@ async def collect(
         bool,
         Parameter(name="--debug-discovery", help="Log room/server discovery steps"),
     ] = SETTINGS.debug_discovery,
+    stop_after: Annotated[
+        float,
+        Parameter(
+            name="--stop-after",
+            help="Stop cleanly after N seconds (0 = run until a signal)",
+        ),
+    ] = SETTINGS.stop_after,
 ) -> None:
     """Collect danmu messages from a Douyu room into one or more run files."""
     room_display = room
@@ -273,23 +280,16 @@ async def collect(
         logger.add(sys.stderr, level="INFO")
         logger.info("Verbose mode enabled")
 
-    # Graceful shutdown: route SIGINT/SIGTERM through an asyncio event so the
-    # run file always gets its meta.ended_at marker. Falls back to raising
-    # KeyboardInterrupt on platforms without loop signal handlers.
-    #
-    # The two signals are registered independently: on Windows
-    # add_signal_handler(SIGTERM) raises NotImplementedError, and a shared
-    # try/except would leave SIGINT hijacked (event set, nobody consuming it)
-    # while use_event_signals stays False - making Ctrl+C unable to exit.
+    # Graceful shutdown and rollover are driven by asyncio events, never by
+    # signals directly: installing a handler is best-effort and each signal is
+    # registered independently, because on Windows add_signal_handler raises
+    # NotImplementedError for all of them and a shared try/except would leave
+    # SIGINT hijacked (event set, nothing consuming it) while SIGTERM fell back.
     loop = asyncio.get_running_loop()
     shutdown_event = asyncio.Event()
     rotate_event = asyncio.Event()
-    use_event_signals = False
-    try:
+    with contextlib.suppress(NotImplementedError):
         loop.add_signal_handler(signal.SIGINT, shutdown_event.set)
-        use_event_signals = True
-    except NotImplementedError:
-        pass
     try:
         loop.add_signal_handler(signal.SIGTERM, shutdown_event.set)
     except NotImplementedError:
@@ -303,6 +303,8 @@ async def collect(
             hup_installed = True
         except NotImplementedError:
             pass
+    if stop_after > 0:
+        loop.call_later(stop_after, shutdown_event.set)
 
     type_filter = (
         [token.strip() for token in msg_types_include.split(",") if token.strip()]
@@ -362,10 +364,12 @@ async def collect(
             print("Send SIGHUP to roll over to a new run file without stopping.")
 
         try:
-            if use_event_signals:
-                await _run_collector(collector, shutdown_event, rotate_event)
-            else:
-                await collector.connect()
+            # Always go through _run_collector: it drives shutdown and rollover
+            # from events, which works whether or not the platform could install
+            # a signal handler (Windows cannot, for any signal). Gating this on
+            # `use_event_signals` silently disabled --stop-after and SIGHUP
+            # everywhere the fallback path was taken.
+            await _run_collector(collector, shutdown_event, rotate_event)
         except KeyboardInterrupt:
             await collector.stop()
             print("Stopped.")
@@ -373,12 +377,15 @@ async def collect(
             print(f"Error: {e}", file=sys.stderr)
             raise SystemExit(1) from e
         finally:
-            stats = getattr(collector.storage, "stats", None)
-            stats_text = ""
-            if stats is not None:
-                stats_text = (
-                    f", committed={stats.get('committed', 0)}, flushes={stats.get('flushes', 0)}"
-                )
+            # Close whatever sink is live now - after a rollover that is not the
+            # one this `async with` opened, and leaving it open would lose its
+            # buffer and mark it as an interrupted run.
+            await collector.aclose()
+            totals = collector.totals
+            stats_text = (
+                f", committed={totals['committed']}, "
+                f"flushes={totals['flushes']}, errors={totals['flush_errors']}"
+            )
             shards = f", shards={collector.rotations + 1}" if collector.rotations else ""
             if last_message_at is not None:
                 print(

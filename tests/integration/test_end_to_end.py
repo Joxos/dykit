@@ -142,6 +142,19 @@ class _FakeCollector:
         self.message_callback = message_callback
         self.rotations = 0
 
+    async def aclose(self) -> None:
+        await self.storage.close()
+
+    @property
+    def totals(self) -> dict[str, int]:
+        stats: dict[str, int] = dict(getattr(self.storage, "stats", {}))
+        return {
+            "messages": stats.get("messages", 0),
+            "committed": stats.get("committed", 0),
+            "flushes": stats.get("flushes", 0),
+            "flush_errors": stats.get("flush_errors", 0),
+        }
+
     async def connect(self) -> None:
         message = _message("SmokeCLI", "capture-cli-smoke")
         await self.storage.save(message)

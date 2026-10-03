@@ -111,6 +111,46 @@ class TestRotation:
         assert _meta(tmp_path / "run1.db")["flush_errors"] == "0"
 
     @pytest.mark.asyncio
+    async def test_aclose_finalises_the_live_shard_not_the_first(self, tmp_path: Path) -> None:
+        """Regression: closing the *first* sink leaves the live one unfinished.
+
+        Found against a live room: after a rollover the last shard had no
+        `ended_at` and no `messages`, so scan_runs reported a clean shutdown as
+        an interrupted run and the tail buffer was never flushed.
+        """
+        make, _ = _factory(tmp_path, rotate_after=0)
+        first = make()
+
+        async with first:
+            collector = AsyncCollector(ROOM, first, sink_factory=make)
+            await collector.storage.save(_message("before"))
+            await collector.rotate()
+            await collector.storage.save(_message("after"))
+
+            await collector.aclose()
+
+        old_meta = _meta(tmp_path / "run1.db")
+        new_meta = _meta(tmp_path / "run2.db")
+
+        assert old_meta["ended_at"] != "", "the rotated-away shard is finalised by rotate()"
+        assert new_meta["ended_at"] != "", "the live shard must be finalised by aclose()"
+        assert new_meta["messages"] == "1"
+        assert new_meta["flush_errors"] == "0"
+
+    @pytest.mark.asyncio
+    async def test_aclose_is_safe_without_rotation(self, tmp_path: Path) -> None:
+        make, _ = _factory(tmp_path, rotate_after=0)
+        first = make()
+
+        async with first:
+            collector = AsyncCollector(ROOM, first, sink_factory=make)
+            await collector.storage.save(_message("only"))
+            await collector.aclose()
+            await collector.aclose()  # idempotent
+
+        assert _meta(tmp_path / "run1.db")["ended_at"] != ""
+
+    @pytest.mark.asyncio
     async def test_without_a_factory_rotation_is_a_noop(self, tmp_path: Path) -> None:
         first = _factory(tmp_path, 0)[0]()
         async with first:

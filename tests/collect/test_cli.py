@@ -50,6 +50,7 @@ class TestCollectCommand:
         monkeypatch.chdir(tmp_path)
         mock_collector = MagicMock()
         mock_collector.connect = AsyncMock(return_value=None)
+        mock_collector.aclose = AsyncMock(return_value=None)
 
         with patch(PATCH_ASYNC_COLLECTOR, return_value=mock_collector) as mock_collector_cls:
             result = runner.invoke(app, ["-r", "6657"])
@@ -77,6 +78,7 @@ class TestCollectCommand:
     def test_collect_custom_output_path(self, runner: CliRunner, tmp_path: Path) -> None:
         mock_collector = MagicMock()
         mock_collector.connect = AsyncMock(return_value=None)
+        mock_collector.aclose = AsyncMock(return_value=None)
         out = tmp_path / "runs" / "my-run.db"
 
         with patch(PATCH_ASYNC_COLLECTOR, return_value=mock_collector):
@@ -98,6 +100,7 @@ class TestCollectCommand:
     def test_collect_with_type_filter(self, runner: CliRunner, tmp_path: Path) -> None:
         mock_collector = MagicMock()
         mock_collector.connect = AsyncMock(return_value=None)
+        mock_collector.aclose = AsyncMock(return_value=None)
 
         with patch(PATCH_ASYNC_COLLECTOR, return_value=mock_collector) as mock_collector_cls:
             result = runner.invoke(

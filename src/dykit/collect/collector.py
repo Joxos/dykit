@@ -155,6 +155,12 @@ class AsyncCollector:
         self._connect_task: asyncio.Task[None] | None = None
         self._sink_lock = asyncio.Lock()
         self._rotations: int = 0
+        self._totals: dict[str, int] = {
+            "messages": 0,
+            "committed": 0,
+            "flushes": 0,
+            "flush_errors": 0,
+        }
 
     # ------------------------------------------------------------------ #
     # observability
@@ -175,6 +181,15 @@ class AsyncCollector:
         return self.storage.run_ref
 
     @property
+    def totals(self) -> dict[str, int]:
+        """Session counters summed across every shard this collector opened.
+
+        ``SQLiteStorage.stats`` is per shard; these are the whole session, so
+        the CLI summary cannot be read as "messages lost".
+        """
+        return dict(self._totals)
+
+    @property
     def real_room_id(self) -> int:
         """Numeric room ID Douyu resolved this vanity name to (0 if unknown)."""
         return self._real_room_id
@@ -187,6 +202,17 @@ class AsyncCollector:
     # ------------------------------------------------------------------ #
     # rotation
     # ------------------------------------------------------------------ #
+
+    async def _retire(self, sink: StorageHandler) -> None:
+        """Close a finished sink and fold its counters into the session totals.
+
+        Without this the CLI would print the *last shard's* committed count next
+        to the *session's* received count, which reads like lost messages.
+        """
+        await sink.close()
+        reported: dict[str, int] = dict(getattr(sink, "stats", {}) or {})
+        for key in self._totals:
+            self._totals[key] += int(reported.get(key, 0))
 
     async def rotate(self, *, reason: str = "manual") -> str | None:
         """Roll over to a new run file without interrupting collection.
@@ -215,7 +241,7 @@ class AsyncCollector:
             old_sink = self.storage
             self.storage = new_sink
 
-        await old_sink.close()  # slow: drains + writes ended_at
+        await self._retire(old_sink)  # slow: drains + writes ended_at
         self._rotations += 1
         logger.debug("rotated run file (reason=%s) -> %s", reason, new_sink.run_ref)
         return new_sink.run_ref
@@ -326,6 +352,16 @@ class AsyncCollector:
                 transport.abort()
         except Exception:
             logger.debug("socket already closed; nothing to close", exc_info=True)
+
+    async def aclose(self) -> None:
+        """Close the sink currently being written.
+
+        The caller has to do this, not whoever opened the *first* sink: after a
+        rollover those are different objects, and closing the first would leave
+        the live shard unflushed with no ``ended_at`` - which reads as an
+        interrupted run forever.
+        """
+        await self._retire(self.storage)
 
     async def _connect_with_retry(self, url: str, ssl_context: ssl.SSLContext) -> Any:
         """Connect to one endpoint, retrying transport failures."""

@@ -46,6 +46,9 @@ class CaptureSettings:
     # --- diagnostics ------------------------------------------------------
     verbose: bool = False
     debug_discovery: bool = False
+    #: Stop cleanly after this many seconds. 0 runs until a signal. Useful for
+    #: scripted captures, smoke tests, and rehearsing a restart by hand.
+    stop_after: float = 0.0
 
 
 SETTINGS = CaptureSettings()
