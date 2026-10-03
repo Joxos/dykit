@@ -1,14 +1,15 @@
 # dykit 数据表设计（SQLite 每 run 一文件）
 
 自 0.2.0 起存储层为 SQLite：**每次采集运行一个 `.db` 文件**，文件即数据，
-无服务器、无 DSN、无迁移。单文件 schema 单一来源：
-`dycap/src/dycap/schema.py`（`SCHEMA_SQL`），由 `SQLiteStorage` 在打开文件时
-执行；`dystat` 只读这些文件。
+无服务器、无 DSN、无迁移。schema 单一来源：`dykit/src/dykit/schema.py`
+（`DANMAKU_SCHEMA`）——写侧 `dycap/src/dycap/schema.py` 由它生成建表 DDL，
+读侧 `dystat/src/dystat/db.py` 由它生成视图列清单，两边不可能漂移；
+`tests/integration/test_schema_contract.py` 钉住这个约定。
 
 ## 文件命名与位置
 
-- 默认：`./dycap-data/<room>_<YYYYMMDD_HHMMSS>.db`（`dycap -r 6657`）。
-- 自定义：`dycap -r 6657 -o <路径>/<文件名>.db`。
+- 默认：`./dycap-data/<room>_<YYYYMMDD_HHMMSS>.db`（`dykit-capture -r 6657`）。
+- 自定义：`dykit-capture -r 6657 -o <路径>/<文件名>.db`。
 - **不覆盖已有文件**：每次运行都是新文件，run 文件是不可变历史。
 
 ## 文件内结构（两张表）
@@ -73,9 +74,10 @@ FROM (SELECT name FROM pragma_database_list) f ...  -- 或直接对目录：
 
 ## 跨 run 分析（dystat 目录模式）
 
-`dystat --data <目录>` 会把目录下所有 `*.db` 以 `ATTACH` 挂载，并建立
+`dykit-stats --data <目录>` 会把目录下所有 `*.db` 以 `ATTACH` 挂载，并建立
 `danmaku_all` UNION ALL 视图，所有查询统一走该视图（单文件模式同样建视图，
-查询 SQL 完全一致）。实现：`dystat/src/dystat/db.py`。
+查询 SQL 完全一致）。实现：`dystat/src/dystat/db.py`（列清单来自
+`dykit.schema.DANMAKU_VIEW_COLUMNS`）。
 
 ## 历史
 

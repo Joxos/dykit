@@ -60,7 +60,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=%h
-ExecStart=%h/dykit/.venv/bin/dycap -r %i
+ExecStart=%h/dykit/.venv/bin/dykit-capture -r %i
 Restart=always
 RestartSec=15
 StandardOutput=journal
@@ -85,7 +85,7 @@ ls ~/dycap-data/                          # 出现 6657_<时间戳>.db
 
 - **24×7 常驻**：斗鱼离线时连接仍保持（心跳 40s / 读超时 180s 自动重连），
   房间开播即有数据，无需定时。12 核机器上占用可忽略。
-- **每次进程启动 = 一个新 run 文件**（`dycap` 拒绝覆盖已存在文件）：
+- **每次进程启动 = 一个新 run 文件**（`dykit-capture` 拒绝覆盖已存在文件）：
   - 崩溃/断电后 systemd 自动重启 → 新文件；旧文件 `meta.ended_at` 缺失 =
     **中断 run，一眼可查**（这正是设计目标）。
   - 正常 stop/restart（如升级）→ 旧文件正常收尾（`ended_at` 写入）。
@@ -101,7 +101,7 @@ systemctl --user enable --now dycap@6657.service
 systemctl --user enable --now dycap@另一个房间.service
 ```
 
-每个房间独立进程、独立 run 文件；`dystat --data ~/dycap-data -r 6657`
+每个房间独立进程、独立 run 文件；`dykit-stats --data ~/dycap-data -r 6657`
 跨所有 run 分析（目录 UNION 模式）。
 
 ## 7. 磁盘容量与保留策略
@@ -190,7 +190,7 @@ tar -czf ~/backups/dycap-$(date +%Y%m).tgz ~/dycap-data
 | 斗鱼协议/SSL 变化导致连不上 | 依赖全部锁版本；`journalctl` 可见重连循环；及时 `git pull` |
 | 磁盘写满 | 水位监控 + 季度归档（见 §7/§8.3） |
 | 与 DST 服务端资源竞争 | 12 核/14G，采集器占用可忽略；如异常可 `systemd-cgtop` 观察 |
-| 误删/误覆盖 run 文件 | `dycap` 拒绝覆盖；备份见 §10 |
+| 误删/误覆盖 run 文件 | `dykit-capture` 拒绝覆盖；备份见 §10 |
 | 未来迁移回群晖 DSM | Docker 备选方案（`docker run --restart unless-stopped -v /data`），容器化后迁移成本最低 |
 
 ## 12. 落地清单（已执行 2026-08-31）
