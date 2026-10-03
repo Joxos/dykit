@@ -21,6 +21,7 @@ import ssl
 from collections.abc import Callable
 from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 import websockets
@@ -29,6 +30,7 @@ from websockets import Origin
 
 from dykit.protocol import MessageBuffer, encode_message, serialize_message
 from dykit.source import get_danmu_server
+from dykit.source.cache import load, store
 
 from .constants import (
     RETRY_ATTEMPTS_WS_CONNECT,
@@ -118,6 +120,7 @@ class AsyncCollector:
         type_exclude: list[str] | None = None,
         message_callback: Callable[[DanmuMessage], None] | None = None,
         sink_factory: Callable[[], StorageHandler] | None = None,
+        data_dir: Path | None = None,
     ) -> None:
         """Initialize the collector.
 
@@ -129,6 +132,7 @@ class AsyncCollector:
             type_exclude: Optional list of message types to exclude.
             sink_factory: Creates the *next* sink when rotating. Required for
                 ``rotate()``; without it the collector cannot shard.
+            data_dir: Where to cache discovered endpoints for a fast warm start.
         """
         self.room_id = room_id
         self.storage = storage
@@ -137,6 +141,7 @@ class AsyncCollector:
         self.type_exclude = type_exclude
         self.message_callback = message_callback
         self._sink_factory = sink_factory
+        self._data_dir = data_dir
 
         self._buffer = MessageBuffer()
         self._state = CaptureState.IDLE
@@ -146,6 +151,7 @@ class AsyncCollector:
         self._candidate_urls: list[str] = []
         self._candidate_index: int = 0
         self._heartbeat_task: asyncio.Task[None] | None = None
+        self._discovery_task: asyncio.Task[None] | None = None
         self._connect_task: asyncio.Task[None] | None = None
         self._sink_lock = asyncio.Lock()
         self._rotations: int = 0
@@ -167,6 +173,16 @@ class AsyncCollector:
     def current_run(self) -> str:
         """Identifier of the sink currently being written."""
         return self.storage.run_ref
+
+    @property
+    def real_room_id(self) -> int:
+        """Numeric room ID Douyu resolved this vanity name to (0 if unknown)."""
+        return self._real_room_id
+
+    @property
+    def candidate_urls(self) -> list[str]:
+        """Danmu endpoints currently in rotation, in preference order."""
+        return list(self._candidate_urls)
 
     # ------------------------------------------------------------------ #
     # rotation
@@ -223,7 +239,7 @@ class AsyncCollector:
 
         try:
             while True:
-                await self._refresh_candidates_if_needed(force=not self._candidate_urls)
+                await self.refresh_candidates(force=not self._candidate_urls)
 
                 if self._candidate_urls:
                     await self._try_candidates(ssl_context)
@@ -233,12 +249,17 @@ class AsyncCollector:
                 self._state = CaptureState.BACKOFF
                 await asyncio.sleep(WS_RECOVERY_BACKOFF_SECONDS)
                 self._state = CaptureState.DISCOVERING
-                await self._refresh_candidates_if_needed(force=True)
+                await self.refresh_candidates(force=True)
         except asyncio.CancelledError:
             self._state = CaptureState.STOPPING
             raise
         finally:
             await self._stop_heartbeat()
+            if self._discovery_task is not None:
+                self._discovery_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._discovery_task
+                self._discovery_task = None
             self._websocket = None
             self._connect_task = None
             self._state = CaptureState.STOPPED
@@ -374,18 +395,52 @@ class AsyncCollector:
         )
         await self._send_with_retry(encode_message(joingroup_msg))
 
-    async def _refresh_candidates_if_needed(self, force: bool = False) -> None:
-        """Refresh danmu server candidates if needed."""
+    async def refresh_candidates(self, force: bool = False) -> None:
+        """Refresh danmu server candidates, preferring the warm cache.
+
+        On a cold start the last known endpoints are adopted immediately so the
+        socket handshake does not wait behind live discovery; the live lookup
+        still runs (in the background) and refreshes the cache. Discovery is
+        the slow part of a restart - seconds, versus a ~100-300ms handshake.
+        """
         now = asyncio.get_running_loop().time()
         if not force and (now - self._last_discovery_time) < WS_SERVER_REFRESH_INTERVAL_SECONDS:
             return
 
-        self._candidate_urls, self._real_room_id = await asyncio.to_thread(
+        if not self._candidate_urls and self._data_dir is not None:
+            cached = load(self._data_dir, self.room_id)
+            if cached is not None:
+                self._candidate_urls = list(cached.urls)
+                self._real_room_id = cached.real_room_id
+                self._last_discovery_time = now
+                logger.debug(
+                    "warm start from endpoint cache: %d urls for room %d",
+                    len(cached.urls),
+                    cached.real_room_id,
+                )
+                # Refresh in the background: a stale cache must not block the
+                # connection we can already make.
+                self._discovery_task = asyncio.create_task(self._refresh_in_background())
+                return
+
+        await self._discover()
+
+    async def _refresh_in_background(self) -> None:
+        """Live discovery that must not delay the current connection."""
+        with contextlib.suppress(Exception):
+            await self._discover()
+
+    async def _discover(self) -> None:
+        self._state = CaptureState.DISCOVERING
+        urls, real_room_id = await asyncio.to_thread(
             get_danmu_server, self.room_id, 10.0, self.ws_url_override
         )
-        self._last_discovery_time = now
+        self._candidate_urls, self._real_room_id = urls, real_room_id
+        self._last_discovery_time = asyncio.get_running_loop().time()
         if self._candidate_index >= len(self._candidate_urls):
             self._candidate_index = 0
+        if self._data_dir is not None:
+            store(self._data_dir, self.room_id, urls, real_room_id)
 
     async def _heartbeat_loop(self) -> None:
         """Send heartbeat messages periodically until cancelled."""

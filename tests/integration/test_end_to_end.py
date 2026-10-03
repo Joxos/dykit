@@ -133,6 +133,7 @@ class _FakeCollector:
         message_callback: Any | None = None,
         ws_url: str | None = None,
         sink_factory: Any | None = None,
+        data_dir: Path | None = None,
     ) -> None:
         self.room_id = room_id
         self.storage = storage

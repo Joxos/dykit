@@ -65,6 +65,7 @@ class TestCollectCommand:
             type_exclude=None,
             message_callback=ANY,
             sink_factory=ANY,
+            data_dir=ANY,
         )
         meta = _meta_of(dbs[0])
         assert meta["room"] == "6657"
@@ -113,4 +114,5 @@ class TestCollectCommand:
             type_exclude=None,
             message_callback=ANY,
             sink_factory=ANY,
+            data_dir=ANY,
         )

@@ -348,6 +348,7 @@ async def collect(
             type_exclude=type_exclude,
             message_callback=message_callback,
             sink_factory=sink_factory,
+            data_dir=Path(DEFAULT_RUN_DIR),
         )
 
         if storage == "sqlite":
