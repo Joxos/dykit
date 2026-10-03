@@ -8,11 +8,16 @@ Maintained, unit-tested (`tests/scripts/`), part of the deployment story.
 
 | Script | Purpose |
 |---|---|
-| `scan_runs.py` | Find interrupted run files (no `meta.ended_at`) and report disk usage. Wired to a systemd timer - see `docs/deployment.md`. Exit 1 when interrupted runs exist. |
+| `scan_runs.py` | Find interrupted run files (no `meta.ended_at`), report collection `GAP`s between consecutive runs of a room, and print disk usage. Wired to a systemd timer - see `docs/deployment.md`. Exit 1 when interrupted runs exist. |
 
 ```bash
-uv run python scripts/scan_runs.py [--data DIR] [--min-age-minutes N]
+uv run python scripts/scan_runs.py [--data DIR] [--min-age-minutes N] [--max-gap-seconds S]
 ```
+
+A `GAP` line means two runs of the same room are further apart than
+`--max-gap-seconds` (default 60s). Normal rotation hands over in milliseconds,
+so anything reported is a real interruption in coverage - a deploy, a crash -
+worth an audit trail rather than an assumption.
 
 ## Probes (exploration only, `probes/`)
 

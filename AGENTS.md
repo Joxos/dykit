@@ -10,9 +10,9 @@ into multiple distributions — the boundaries that matter are enforced by
 src/dykit/
   protocol/   pure wire codec - no IO, no network          (leaf)
   source/     the only HTTP to douyu.com                    (leaf)
-  schema.py   the run-file contract: columns, DDL, timestamps, default dir (leaf)
-  collect/    live capture: collector, payload, storage/, render, CLI
-  stats/      read-only analysis: db, filters, rank/cluster/search, CLI
+  schema.py   the run-file contract: columns, DDL, timestamps (leaf)
+  collect/    live capture: collector, payload, storage/, render, archive, CLI
+  stats/      read-only analysis: db, filters, rank·cluster·search, analysis/, CLI
 scripts/      ops tools + probes/ (see scripts/README.md)
 tests/        one directory per layer, plus arch/ and integration/
 ```
@@ -28,6 +28,19 @@ Allowed dependencies (anything else is a layering violation):
 Commands: `dykit-capture` (collect) and `dykit-stats` (stats). There is no
 dispatcher command and no forwarding shims - if you catch yourself adding
 one, delete it instead.
+
+## Capture operations
+
+| Trigger | Effect |
+|---|---|
+| `--rotate-after N` (default 1,000,000 committed messages) | Roll over to a new run file |
+| `SIGHUP` | Same, on demand: `systemctl --user kill -s HUP dykit-capture@6657` |
+| `SIGTERM` / `SIGINT` | Write `ended_at`, stop |
+
+A rollover swaps only the write sink; the socket, heartbeat and receive loop
+stay up, so it loses nothing and duplicates nothing. `scripts/scan_runs.py`
+reports a `GAP` when consecutive runs of a room are more than
+`--max-gap-seconds` apart, so every deploy leaves an audit trail.
 
 ---
 
@@ -72,7 +85,7 @@ uv run pytest --lf -q              # last failed
 ```bash
 uv run pytest --cov --cov-report=term-missing
 ```
-Floor: `fail_under = 72` in `pyproject.toml` (measured 76%). Raise it, never lower it.
+Floor: `fail_under = 72` in `pyproject.toml` (measured 82%). Raise it, never lower it.
 
 ### CI-equivalent local gate
 ```bash
@@ -142,6 +155,21 @@ All `[tool.*]` settings live in the root `pyproject.toml` only.
 3. Add the raw payload key to `EXTRACTED_RAW_KEYS` in `schema.py`.
 
 `tests/integration/test_schema_contract.py` fails if any step is missed.
+
+### Writing an analysis
+Implement the `Analysis` protocol in `stats/analysis/` and register it
+(built-ins in `builtins.py`, or via the `dykit.analysis` entry-point group).
+
+Non-negotiable: **push the work into SQL.** `build_query()` does the filtering
+and aggregation; `rows_to_result()` may only make one streaming pass over what
+the query returned. An analysis that aggregates in Python re-reads the corpus
+and undoes everything the storage layer is for. `tests/stats/test_analysis.py`
+asserts it.
+
+### Settings
+Every tunable of `dykit-capture` lives in `collect/settings.py` and is exposed
+on the CLI. `tests/collect/test_settings_cli.py` fails if a field is missing
+from the signature or if a CLI default drifts from the dataclass.
 
 ### Typing
 - `basedpyright` strict mode

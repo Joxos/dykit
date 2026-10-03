@@ -82,7 +82,33 @@ One SQLite file per collection run (see `docs/schema.md`):
   `ended_at` is an interrupted run (process killed) - downtime is visible at a
   glance. Run files are immutable: `dykit-capture` refuses to overwrite them.
 
+## Capture operations
+
+| Trigger | Effect |
+|---|---|
+| `--rotate-after N` (default 1,000,000 messages) | Roll over to a new run file |
+| `SIGHUP` | Same, on demand |
+| `SIGTERM` / `SIGINT` | Write `ended_at`, stop |
+
+```bash
+systemctl --user kill -s HUP dykit-capture@6657   # shard without a collection gap
+```
+
+A rollover swaps only the write sink - socket, heartbeat and receive loop stay
+up - so it loses nothing and duplicates nothing. Every knob of `dykit-capture`
+is a CLI flag; the defaults live in `dykit.collect.settings`.
+
+## Analyses
+
+`dykit-stats` ships `rank`, `cluster` and `search`, and analyses are a plugin
+point: implement the `Analysis` protocol in `dykit.stats.analysis` (or
+advertise one through the `dykit.analysis` entry-point group) and it shows up
+alongside the built-ins. The rule is that the work happens in SQL -
+`build_query()` filters and aggregates, `rows_to_result()` makes at most one
+streaming pass - so a new analysis does not turn into a corpus scan.
+
 ## Ops
 
-`scripts/scan_runs.py` finds interrupted runs and reports disk usage; see
+`scripts/scan_runs.py` finds interrupted runs, reports collection `GAP`s
+between consecutive runs of a room, and prints disk usage; see
 `scripts/README.md` and `docs/deployment.md`.
