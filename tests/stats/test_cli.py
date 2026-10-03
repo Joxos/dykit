@@ -1,10 +1,17 @@
-"""Tests for the stats CLI (rank, cluster, search)."""
+"""Tests for the stats CLI (rank, cluster, search).
+
+These test the CLI's own job: resolving the room/data path, handing the
+options to the right registered analysis, and turning failures into exit
+codes. The analyses themselves are covered by ``tests/stats/test_analysis.py``;
+running them for real against run files is covered by
+``tests/integration``.
+"""
 
 from __future__ import annotations
 
 import sqlite3
 from datetime import datetime
-from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -13,279 +20,297 @@ from dykit.stats.cli import app
 
 from ..cli_test_runner import CliRunner
 
-PATCH_RANK = "dykit.stats.cli.rank_messages"
-PATCH_CLUSTER = "dykit.stats.cli.find_clusters"
-PATCH_SEARCH = "dykit.stats.cli.search_messages"
-
+PATCH_RUN = "dykit.stats.cli.run_analysis"
 FAKE_DATA = "some/path.db"
-RESOLVED_DATA = Path(FAKE_DATA)
 
 
-def _rank_kwargs(**overrides: object) -> dict[str, object]:
-    """Expected rank() keyword call for `rank` with all defaults."""
-    kwargs: dict[str, object] = {
-        "top": 10,
-        "mode": "user",
-        "msg_type": "chatmsg",
-        "days": None,
-        "username": None,
-        "user_id": None,
-        "from_date": None,
-        "to_date": None,
-        "last": None,
-        "first": None,
-    }
-    kwargs.update(overrides)
-    return kwargs
+@pytest.fixture(autouse=True)
+def _stub_db(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DataDb is exercised elsewhere; here only the plumbing is under test."""
+    fake_db = MagicMock()
+    fake_db.return_value.__enter__.return_value = fake_db
+    monkeypatch.setattr("dykit.stats.cli.DataDb", fake_db)
 
 
-def _cluster_kwargs(**overrides: object) -> dict[str, object]:
-    """Expected cluster() keyword call for `cluster` with all defaults."""
-    kwargs: dict[str, object] = {
-        "threshold": 0.5,
-        "msg_type": "chatmsg",
-        "limit": 50,
-        "username": None,
-        "user_id": None,
-        "from_date": None,
-        "to_date": None,
-        "last": None,
-        "first": None,
-        "days": None,
-    }
-    kwargs.update(overrides)
-    return kwargs
-
-
-def _search_kwargs(**overrides: object) -> dict[str, object]:
-    """Expected search() keyword call for `search` with all defaults."""
-    kwargs: dict[str, object] = {
-        "query": None,
-        "username": None,
-        "user_id": None,
-        "msg_type": None,
-        "from_date": None,
-        "to_date": None,
-        "last": None,
-        "first": None,
-    }
-    kwargs.update(overrides)
-    return kwargs
-
-
-def _real_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Undo the autouse stub so the real resolve_runtime runs (it checks --data)."""
-    from dykit.stats.runtime import resolve_runtime
-
-    monkeypatch.setattr("dykit.stats.cli.resolve_runtime", resolve_runtime)
+def _called(mock: MagicMock) -> dict[str, Any]:
+    """Pull analysis name + options back out of the run_analysis mock."""
+    positional, keywords = mock.call_args
+    return {"analysis": positional[0].name, "kwargs": dict(keywords)}
 
 
 class TestRuntimeResolution:
-    """The CLI resolves the room and the data path before querying."""
-
-    def test_resolves_room_before_querying(self, runner: CliRunner) -> None:
-        with (
-            patch(PATCH_RANK, return_value=[]) as mock_rank,
-            patch("dykit.stats.cli.resolve_runtime", return_value=("6979222", RESOLVED_DATA)),
-        ):
+    def test_room_and_data_are_resolved_before_running(self, runner: CliRunner) -> None:
+        with patch(PATCH_RUN, return_value=[]) as mock_run:
             result = runner.invoke(app, ["rank", "--data", FAKE_DATA, "-r", "6657"])
 
         assert result.exit_code == 0
-        mock_rank.assert_called_once_with(RESOLVED_DATA, "6979222", **_rank_kwargs())
+        assert _called(mock_run) == {
+            "analysis": "rank",
+            "kwargs": {
+                "room": "6657",
+                "top": 10,
+                "mode": "user",
+                "msg_type": "chatmsg",
+                "days": None,
+                "username": None,
+                "user_id": None,
+                "from_date": None,
+                "to_date": None,
+                "last": None,
+                "first": None,
+            },
+        }
 
     def test_missing_data_path_is_a_cli_error(
         self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _real_runtime(monkeypatch)
+        from dykit.stats.runtime import resolve_runtime
 
-        with patch(PATCH_RANK, return_value=[]):
+        monkeypatch.setattr("dykit.stats.cli.resolve_runtime", resolve_runtime)
+
+        with patch(PATCH_RUN, return_value=[]):
             result = runner.invoke(app, ["rank", "--data", "no/such/dir", "-r", "6657"])
 
         assert result.exit_code == 1
         assert "Data path not found" in result.output
 
     def test_query_failure_is_a_cli_error(self, runner: CliRunner) -> None:
-        with patch(PATCH_RANK, side_effect=sqlite3.Error("db failed")):
+        with patch(PATCH_RUN, side_effect=sqlite3.Error("db failed")):
             result = runner.invoke(app, ["rank", "--data", FAKE_DATA, "-r", "6657"])
 
         assert result.exit_code == 1
         assert "Error" in result.output
 
+    def test_unknown_analysis_is_a_cli_error(self, runner: CliRunner) -> None:
+        with patch(PATCH_RUN, side_effect=KeyError("nope")):
+            result = runner.invoke(app, ["rank", "--data", FAKE_DATA, "-r", "6657"])
+
+        assert result.exit_code == 1
+
 
 class TestRankCommand:
-    @patch(PATCH_RANK, return_value=[])
-    def test_rank_by_option_happy_path(self, mock_rank: MagicMock, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["rank", "--data", FAKE_DATA, "-r", "6657", "--by", "user"])
-        assert result.exit_code == 0
-        mock_rank.assert_called_once_with(RESOLVED_DATA, "6657", **_rank_kwargs())
+    def test_defaults(self, runner: CliRunner) -> None:
+        with patch(PATCH_RUN, return_value=[]) as mock_run:
+            result = runner.invoke(app, ["rank", "--data", FAKE_DATA, "-r", "6657"])
 
-    @patch(PATCH_RANK, return_value=[MagicMock(rank=1, value="alice", count=42)])
-    def test_rank_user_mode_happy_path(self, mock_rank: MagicMock, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["rank", "--data", FAKE_DATA, "-r", "6657", "--by", "user"])
+        assert result.exit_code == 0
+        assert _called(mock_run)["analysis"] == "rank"
+
+    def test_renders_a_table(self, runner: CliRunner) -> None:
+        from dykit.stats.rank import RankResult
+
+        rows = [RankResult(rank=1, value="alice", count=42)]
+        with patch(PATCH_RUN, return_value=rows):
+            result = runner.invoke(app, ["rank", "--data", FAKE_DATA, "-r", "6657"])
+
         assert result.exit_code == 0
         assert "alice" in result.output
         assert "42" in result.output
-        mock_rank.assert_called_once_with(RESOLVED_DATA, "6657", **_rank_kwargs())
 
-    @patch(PATCH_RANK, return_value=[])
-    def test_rank_no_results(self, mock_rank: MagicMock, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["rank", "--data", FAKE_DATA, "-r", "6657"])
-        assert result.exit_code == 0
-        mock_rank.assert_called_once_with(RESOLVED_DATA, "6657", **_rank_kwargs())
+    def test_by_option_is_forwarded(self, runner: CliRunner) -> None:
+        with patch(PATCH_RUN, return_value=[]) as mock_run:
+            result = runner.invoke(
+                app, ["rank", "--data", FAKE_DATA, "-r", "6657", "--by", "content"]
+            )
 
-    @patch(
-        PATCH_RANK,
-        return_value=[MagicMock(rank=1, value="spam message", count=5)],
-    )
-    def test_rank_content_mode_happy_path(self, mock_rank: MagicMock, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["rank", "--data", FAKE_DATA, "-r", "6657", "--by", "content"])
         assert result.exit_code == 0
-        assert "spam message" in result.output
-        assert "5" in result.output
-        mock_rank.assert_called_once_with(RESOLVED_DATA, "6657", **_rank_kwargs(mode="content"))
+        assert _called(mock_run)["kwargs"]["mode"] == "content"
 
-    @patch(PATCH_RANK, return_value=[])
-    def test_rank_with_days(self, mock_rank: MagicMock, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["rank", "--data", FAKE_DATA, "-r", "6657", "--days", "7"])
-        assert result.exit_code == 0
-        mock_rank.assert_called_once_with(RESOLVED_DATA, "6657", **_rank_kwargs(days=7))
+    def test_days_is_forwarded(self, runner: CliRunner) -> None:
+        with patch(PATCH_RUN, return_value=[]) as mock_run:
+            result = runner.invoke(app, ["rank", "--data", FAKE_DATA, "-r", "6657", "--days", "7"])
 
-    @patch(PATCH_RANK, return_value=[])
-    def test_rank_with_last(self, mock_rank: MagicMock, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["rank", "--data", FAKE_DATA, "-r", "6657", "--last", "10"])
         assert result.exit_code == 0
-        mock_rank.assert_called_once_with(RESOLVED_DATA, "6657", **_rank_kwargs(last=10))
+        assert _called(mock_run)["kwargs"]["days"] == 7
+
+    def test_last_is_forwarded(self, runner: CliRunner) -> None:
+        with patch(PATCH_RUN, return_value=[]) as mock_run:
+            result = runner.invoke(app, ["rank", "--data", FAKE_DATA, "-r", "6657", "--last", "10"])
+
+        assert result.exit_code == 0
+        assert _called(mock_run)["kwargs"]["last"] == 10
+
+    def test_top_is_forwarded(self, runner: CliRunner) -> None:
+        with patch(PATCH_RUN, return_value=[]) as mock_run:
+            result = runner.invoke(app, ["rank", "--data", FAKE_DATA, "-r", "6657", "--top", "3"])
+
+        assert result.exit_code == 0
+        assert _called(mock_run)["kwargs"]["top"] == 3
 
 
 class TestClusterCommand:
-    @patch(PATCH_CLUSTER, return_value=[])
-    def test_cluster_no_messages(self, mock_cluster: MagicMock, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["cluster", "--data", FAKE_DATA, "-r", "6657"])
-        assert result.exit_code == 0
-        assert "0 clusters" in result.output
-        mock_cluster.assert_called_once_with(RESOLVED_DATA, "6657", **_cluster_kwargs())
+    def test_defaults(self, runner: CliRunner) -> None:
+        with patch(PATCH_RUN, return_value=[]) as mock_run:
+            result = runner.invoke(app, ["cluster", "--data", FAKE_DATA, "-r", "6657"])
 
-    @patch(
-        PATCH_CLUSTER,
-        return_value=[
-            MagicMock(
+        assert result.exit_code == 0
+        assert _called(mock_run) == {
+            "analysis": "cluster",
+            "kwargs": {
+                "room": "6657",
+                "threshold": 0.5,
+                "msg_type": "chatmsg",
+                "limit": 50,
+                "username": None,
+                "user_id": None,
+                "from_date": None,
+                "to_date": None,
+                "last": None,
+                "first": None,
+                "days": None,
+            },
+        }
+
+    def test_renders_clusters(self, runner: CliRunner) -> None:
+        from dykit.stats.cluster import ClusterResult
+
+        rows = [
+            ClusterResult(
                 representative="hello world",
                 count=5,
                 similar=[("hello world", 3), ("hello worlds", 2)],
             )
-        ],
-    )
-    def test_cluster_happy_path(self, mock_cluster: MagicMock, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["cluster", "--data", FAKE_DATA, "-r", "6657"])
+        ]
+        with patch(PATCH_RUN, return_value=rows):
+            result = runner.invoke(app, ["cluster", "--data", FAKE_DATA, "-r", "6657"])
+
         assert result.exit_code == 0
         assert "hello world" in result.output
-        mock_cluster.assert_called_once_with(RESOLVED_DATA, "6657", **_cluster_kwargs())
 
-    @patch(PATCH_CLUSTER, return_value=[])
-    def test_cluster_with_options(self, mock_cluster: MagicMock, runner: CliRunner) -> None:
-        result = runner.invoke(
-            app,
-            [
-                "cluster",
-                "--data",
-                FAKE_DATA,
-                "-r",
-                "6657",
-                "--threshold",
-                "0.7",
-                "--limit",
-                "100",
-                "--type",
-                "dgb",
-            ],
-        )
-        assert result.exit_code == 0
-        mock_cluster.assert_called_once_with(
-            RESOLVED_DATA, "6657", **_cluster_kwargs(threshold=0.7, limit=100, msg_type="dgb")
-        )
+    def test_options_are_forwarded(self, runner: CliRunner) -> None:
+        with patch(PATCH_RUN, return_value=[]) as mock_run:
+            result = runner.invoke(
+                app,
+                [
+                    "cluster",
+                    "--data",
+                    FAKE_DATA,
+                    "-r",
+                    "6657",
+                    "--threshold",
+                    "0.7",
+                    "--limit",
+                    "100",
+                    "--type",
+                    "dgb",
+                ],
+            )
 
-    @patch(PATCH_CLUSTER, return_value=[])
-    def test_cluster_with_first(self, mock_cluster: MagicMock, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["cluster", "--data", FAKE_DATA, "-r", "6657", "--first", "20"])
         assert result.exit_code == 0
-        mock_cluster.assert_called_once_with(RESOLVED_DATA, "6657", **_cluster_kwargs(first=20))
+        kwargs = _called(mock_run)["kwargs"]
+        assert kwargs["threshold"] == 0.7
+        assert kwargs["limit"] == 100
+        assert kwargs["msg_type"] == "dgb"
+
+    def test_first_is_forwarded(self, runner: CliRunner) -> None:
+        with patch(PATCH_RUN, return_value=[]) as mock_run:
+            result = runner.invoke(
+                app, ["cluster", "--data", FAKE_DATA, "-r", "6657", "--first", "20"]
+            )
+
+        assert result.exit_code == 0
+        assert _called(mock_run)["kwargs"]["first"] == 20
 
 
 class TestSearchCommand:
-    @patch(
-        PATCH_SEARCH,
-        return_value=[
-            MagicMock(
+    def test_defaults(self, runner: CliRunner) -> None:
+        with patch(PATCH_RUN, return_value=[]) as mock_run:
+            result = runner.invoke(app, ["search", "--data", FAKE_DATA, "-r", "6657"])
+
+        assert result.exit_code == 0
+        assert _called(mock_run) == {
+            "analysis": "search",
+            "kwargs": {
+                "room": "6657",
+                "content": None,
+                "username": None,
+                "user_id": None,
+                "msg_type": None,
+                "from_date": None,
+                "to_date": None,
+                "last": None,
+                "first": None,
+            },
+        }
+
+    def test_renders_rows(self, runner: CliRunner) -> None:
+        from dykit.stats.search import SearchResult
+
+        rows = [
+            SearchResult(
                 timestamp=datetime(2026, 3, 8, 12, 0, 0),
                 username="alice",
                 content="test message",
                 msg_type="chatmsg",
             )
-        ],
-    )
-    def test_search_happy_path(self, mock_search: MagicMock, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["search", "--data", FAKE_DATA, "-r", "6657", "--content", "x"])
+        ]
+        with patch(PATCH_RUN, return_value=rows):
+            result = runner.invoke(
+                app, ["search", "--data", FAKE_DATA, "-r", "6657", "--content", "x"]
+            )
+
         assert result.exit_code == 0
         assert "alice" in result.output
         assert "test message" in result.output
-        mock_search.assert_called_once_with(RESOLVED_DATA, "6657", **_search_kwargs(query="x"))
 
-    @patch(PATCH_SEARCH, return_value=[])
-    def test_search_no_results(self, mock_search: MagicMock, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["search", "--data", FAKE_DATA, "-r", "6657", "--content", "y"])
+    def test_content_becomes_the_content_option(self, runner: CliRunner) -> None:
+        with patch(PATCH_RUN, return_value=[]) as mock_run:
+            result = runner.invoke(
+                app, ["search", "--data", FAKE_DATA, "-r", "6657", "--content", "y"]
+            )
+
         assert result.exit_code == 0
-        assert "Found 0 messages" in result.output
-        mock_search.assert_called_once_with(RESOLVED_DATA, "6657", **_search_kwargs(query="y"))
+        assert _called(mock_run)["kwargs"]["content"] == "y"
 
-    @patch(PATCH_SEARCH, return_value=[])
-    def test_search_with_filters(self, mock_search: MagicMock, runner: CliRunner) -> None:
-        result = runner.invoke(
-            app,
-            [
-                "search",
-                "--data",
-                FAKE_DATA,
-                "-r",
-                "6657",
-                "--user",
-                "alice",
-                "--user-id",
-                "uid1",
-                "--type",
-                "chatmsg",
-                "--from",
-                "2026-03-01",
-                "--to",
-                "2026-03-07",
-            ],
-        )
+    def test_filters_are_forwarded(self, runner: CliRunner) -> None:
+        with patch(PATCH_RUN, return_value=[]) as mock_run:
+            result = runner.invoke(
+                app,
+                [
+                    "search",
+                    "--data",
+                    FAKE_DATA,
+                    "-r",
+                    "6657",
+                    "--user",
+                    "alice",
+                    "--user-id",
+                    "uid1",
+                    "--type",
+                    "chatmsg",
+                    "--from",
+                    "2026-03-01",
+                    "--to",
+                    "2026-03-07",
+                ],
+            )
+
         assert result.exit_code == 0
-        mock_search.assert_called_once_with(
-            RESOLVED_DATA,
-            "6657",
-            **_search_kwargs(
-                username="alice",
-                user_id="uid1",
-                msg_type="chatmsg",
-                from_date="2026-03-01",
-                to_date="2026-03-07",
-            ),
-        )
+        kwargs = _called(mock_run)["kwargs"]
+        assert kwargs["username"] == "alice"
+        assert kwargs["user_id"] == "uid1"
+        assert kwargs["msg_type"] == "chatmsg"
+        assert kwargs["from_date"] == "2026-03-01"
+        assert kwargs["to_date"] == "2026-03-07"
 
-    @patch(PATCH_SEARCH, return_value=[])
-    def test_search_accepts_username_alias(self, mock_search: MagicMock, runner: CliRunner) -> None:
+    def test_username_alias(self, runner: CliRunner) -> None:
         """`--username` is the shared spelling; `--user` stays as an alias."""
-        result = runner.invoke(
-            app, ["search", "--data", FAKE_DATA, "-r", "6657", "--username", "a"]
-        )
-        assert result.exit_code == 0
-        mock_search.assert_called_once_with(RESOLVED_DATA, "6657", **_search_kwargs(username="a"))
+        with patch(PATCH_RUN, return_value=[]) as mock_run:
+            result = runner.invoke(
+                app, ["search", "--data", FAKE_DATA, "-r", "6657", "--username", "a"]
+            )
 
-    @patch(PATCH_SEARCH, return_value=[])
-    def test_search_with_last(self, mock_search: MagicMock, runner: CliRunner) -> None:
-        result = runner.invoke(app, ["search", "--data", FAKE_DATA, "-r", "6657", "--last", "12"])
         assert result.exit_code == 0
-        mock_search.assert_called_once_with(RESOLVED_DATA, "6657", **_search_kwargs(last=12))
+        assert _called(mock_run)["kwargs"]["username"] == "a"
+
+    def test_last_is_forwarded(self, runner: CliRunner) -> None:
+        with patch(PATCH_RUN, return_value=[]) as mock_run:
+            result = runner.invoke(
+                app, ["search", "--data", FAKE_DATA, "-r", "6657", "--last", "12"]
+            )
+
+        assert result.exit_code == 0
+        assert _called(mock_run)["kwargs"]["last"] == 12
 
 
 class TestVersionOptions:

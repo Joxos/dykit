@@ -4,18 +4,20 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from importlib.metadata import version
-from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
 from cyclopts import App, Parameter
 from rich.console import Console
 from rich.table import Table
 
 from ..schema import DEFAULT_RUN_DIR
-from .cluster import cluster as find_clusters
-from .rank import rank as rank_messages
+from .analysis import get
+from .analysis import run as run_analysis
+from .cluster import ClusterResult
+from .db import DataDb
+from .rank import RankResult
 from .runtime import resolve_runtime
-from .search import search as search_messages
+from .search import SearchResult
 
 console: Console = Console()
 app: App = App(name="dykit-stats", version=lambda: f"dykit {version('dykit')}")
@@ -82,18 +84,21 @@ def _run_with_cli_error[T](func: Callable[[], T]) -> T:
         raise SystemExit(1) from e
 
 
-def _analyze[T](room: str, data: str | None, func: Callable[[Path, str], T]) -> T:
-    """Resolve the room and the --data path, then run ``func(data_path, room)``.
+def _analyze(analysis_name: str, room: str, data: str | None, **options: object) -> object:
+    """Resolve the room and --data, then run a registered analysis over it.
 
-    Resolution failures (unknown room, missing path) surface as a CLI error
-    with exit code 1, exactly like a failed query does.
+    Every command goes through the plugin registry, so built-ins and external
+    plugins share one code path and a plugin gets the same error handling as
+    `rank`. Resolution failures (unknown room, missing path) surface as a CLI
+    error with exit code 1, exactly like a failed query does.
     """
 
-    def run() -> T:
+    def execute() -> object:
         resolved_room, data_path = resolve_runtime(room, data)
-        return func(data_path, resolved_room)
+        with DataDb(data_path) as db:
+            return run_analysis(get(analysis_name), db, room=resolved_room, **options)
 
-    return _run_with_cli_error(run)
+    return _run_with_cli_error(execute)
 
 
 @app.command
@@ -121,12 +126,12 @@ def rank(
         dykit-stats rank -r 6657 --by content --top 5
         dykit-stats rank -r 6657 --type dgb --top 5
     """
-    results = _analyze(
-        room,
-        data,
-        lambda path, resolved_room: rank_messages(
-            path,
-            resolved_room,
+    results = cast(
+        "list[RankResult]",
+        _analyze(
+            "rank",
+            room,
+            data,
             top=top,
             mode=mode,
             msg_type=msg_type,
@@ -174,12 +179,12 @@ def cluster(
     Examples:
         dykit-stats cluster -r 6657 --threshold 0.5
     """
-    results = _analyze(
-        room,
-        data,
-        lambda path, resolved_room: find_clusters(
-            path,
-            resolved_room,
+    results = cast(
+        "list[ClusterResult]",
+        _analyze(
+            "cluster",
+            room,
+            data,
             threshold=threshold,
             msg_type=msg_type,
             limit=limit,
@@ -225,13 +230,13 @@ def search(
         dykit-stats search -r 6657 --content "hello"
         dykit-stats search -r 6657 --username "张三"
     """
-    results = _analyze(
-        room,
-        data,
-        lambda path, resolved_room: search_messages(
-            path,
-            resolved_room,
-            query=content,
+    results = cast(
+        "list[SearchResult]",
+        _analyze(
+            "search",
+            room,
+            data,
+            content=content,
             username=username,
             user_id=user_id,
             msg_type=msg_type,

@@ -21,7 +21,9 @@ import pytest
 
 from dykit.schema import SCHEMA_SQL
 from dykit.stats.analysis import Param, Query, available, get, register, reset, run
+from dykit.stats.cluster import ClusterResult
 from dykit.stats.db import DataDb
+from dykit.stats.rank import RankResult
 
 ROOM = "6657"
 
@@ -147,20 +149,26 @@ class TestRegistry:
 
 
 class TestRankThroughThePlugin:
-    def test_matches_the_library_result(self, seeded: Path) -> None:
+    def test_returns_exactly_what_the_library_function_returns(self, seeded: Path) -> None:
+        """The strongest form of "one code path": identical output, not similar."""
         from dykit.stats.rank import rank
 
         with DataDb(seeded) as db:
-            plugin_result = run(get("rank"), db, room=ROOM, mode="user")
+            plugin_result = cast("list[RankResult]", run(get("rank"), db, room=ROOM, mode="user"))
+        expected = rank(seeded, ROOM, mode="user")
 
-        assert plugin_result == [(1, "alice", 2), (2, "bob", 1), (3, "carol", 1)]
-        _ = rank  # the library entry point stays the reference implementation
+        assert plugin_result == expected
+        assert [(r.rank, r.value, r.count) for r in plugin_result] == [
+            (1, "alice", 2),
+            (2, "bob", 1),
+            (3, "carol", 1),
+        ]
 
     def test_window_options_reach_sql(self, seeded: Path) -> None:
         with DataDb(seeded) as db:
-            result = run(get("rank"), db, room=ROOM, top=1)
+            result = cast("list[RankResult]", run(get("rank"), db, room=ROOM, top=1))
 
-        assert result == [(1, "alice", 2)]
+        assert [(r.value, r.count) for r in result] == [("alice", 2)]
 
     def test_conflicting_days_and_range_is_rejected(self, seeded: Path) -> None:
         with DataDb(seeded) as db, pytest.raises(ValueError, match="--days"):
@@ -169,6 +177,49 @@ class TestRankThroughThePlugin:
     def test_unknown_option_is_rejected(self, seeded: Path) -> None:
         with DataDb(seeded) as db, pytest.raises(ValueError, match="unknown option"):
             run(get("rank"), db, room=ROOM, nonsense=1)
+
+
+class TestClusterThroughThePlugin:
+    """Clustering is the case where a Python pass is genuinely needed."""
+
+    def test_returns_exactly_what_the_library_function_returns(self, seeded: Path) -> None:
+        from dykit.stats.cluster import cluster
+
+        with DataDb(seeded) as db:
+            plugin_result = cast(
+                "list[ClusterResult]", run(get("cluster"), db, room=ROOM, threshold=0.5)
+            )
+        expected = cluster(seeded, ROOM, threshold=0.5)
+
+        assert plugin_result == expected
+        # The two identical "hello" rows are grouped by SQL COUNT(*), so the
+        # representative carries count 2 before any fuzzy pass runs; the rest
+        # tie at 1 and are ordered by content.
+        assert [c.representative for c in plugin_result] == ["hello", "fresh", "world"]
+        assert plugin_result[0].count == 2
+
+    def test_candidates_are_capped_in_sql(self, seeded: Path) -> None:
+        """The expensive part must not run over the whole corpus."""
+        options = get("cluster").make_options(room=ROOM, limit=7)
+        query = get("cluster").build_query(options)
+
+        assert "LIMIT ?" in query.sql
+        assert query.params[-1] == 7
+
+    def test_threshold_reaches_the_grouping_pass(self, seeded: Path) -> None:
+        """Threshold is not applied in SQL (no SQL equivalent), so it must be threaded."""
+        from dykit.stats.cluster import cluster
+
+        for threshold in (0.0, 0.5, 0.99):
+            with DataDb(seeded) as db:
+                plugin_result = cast(
+                    "list[ClusterResult]",
+                    run(get("cluster"), db, room=ROOM, threshold=threshold),
+                )
+            assert plugin_result == cluster(seeded, ROOM, threshold=threshold)
+
+    def test_cluster_is_a_registered_analysis(self) -> None:
+        assert "cluster" in available()
 
 
 class TestLatestUnique:

@@ -20,6 +20,43 @@ class ClusterResult:
     similar: list[tuple[str, int]]
 
 
+def group_similar(messages: list[tuple[str, int]], threshold: float) -> list[ClusterResult]:
+    """Greedily group ``(content, count)`` pairs by fuzzy text similarity.
+
+    Pure and IO-free: the caller decides what the candidate set is (the SQL in
+    :func:`cluster` does), this decides only how the candidates group. Cost is
+    quadratic in the number of *unassigned* candidates, which is why the
+    candidate set is capped by ``--limit`` in SQL rather than here.
+    """
+    clusters: list[ClusterResult] = []
+    assigned: set[int] = set()
+
+    for i, (content, count) in enumerate(messages):
+        if i in assigned:
+            continue
+
+        similar = [(content, count)]
+        assigned.add(i)
+
+        for j, (other_content, other_count) in enumerate(messages):
+            if j in assigned:
+                continue
+
+            if fuzz.ratio(content, other_content) / 100.0 >= threshold:
+                similar.append((other_content, other_count))
+                assigned.add(j)
+
+        clusters.append(
+            ClusterResult(
+                representative=content,
+                count=sum(total for _, total in similar),
+                similar=similar,
+            )
+        )
+
+    return clusters
+
+
 def cluster(
     data: Path,
     room: str,
@@ -76,43 +113,11 @@ def cluster(
         SELECT content, COUNT(*) AS cnt
         FROM filtered
         GROUP BY content
-        ORDER BY cnt DESC
+        ORDER BY cnt DESC, content
         LIMIT ?
         """
 
     with DataDb(data) as db:
         rows = db.query(query_sql, (*params, limit))
-        messages = [(row[0], row[1]) for row in rows]
 
-    if not messages:
-        return []
-
-    # Greedy clustering
-    clusters: list[ClusterResult] = []
-    assigned: set[int] = set()
-
-    for i, (content, count) in enumerate(messages):
-        if i in assigned:
-            continue
-
-        similar = [(content, count)]
-        assigned.add(i)
-
-        for j, (other_content, other_count) in enumerate(messages):
-            if j in assigned:
-                continue
-
-            ratio = fuzz.ratio(content, other_content) / 100.0
-            if ratio >= threshold:
-                similar.append((other_content, other_count))
-                assigned.add(j)
-
-        clusters.append(
-            ClusterResult(
-                representative=content,
-                count=sum(c for _, c in similar),
-                similar=similar,
-            )
-        )
-
-    return clusters
+    return group_similar([(row[0], row[1]) for row in rows], threshold)
