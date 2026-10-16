@@ -227,15 +227,27 @@ class AsyncCollector:
         buffer into the old file, and every message after the swap goes to the
         new one.
 
-        Returns the new run's identifier, or None if the collector has no
-        factory and therefore cannot shard.
+        Returns the new run's identifier, or None when no rollover happened
+        (no factory, or the new sink could not be opened). A failed rollover is
+        deliberately non-fatal: the current sink stays live and collection
+        continues, because losing the receive loop over a shard-naming or
+        filesystem hiccup would cost real data.
         """
         if self._sink_factory is None:
             logger.debug("rotate(%s) ignored: no sink factory configured", reason)
             return None
 
-        new_sink = self._sink_factory()  # slow: opens the file
-        await new_sink.open()
+        try:
+            new_sink = self._sink_factory()  # slow: opens the file
+            await new_sink.open()
+        except Exception:
+            logger.warning(
+                "rotate(%s) failed to prepare a new run file; continuing in %s",
+                reason,
+                self.storage.run_ref,
+                exc_info=True,
+            )
+            return None
 
         async with self._sink_lock:  # critical section: one assignment
             old_sink = self.storage

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -157,6 +158,99 @@ class TestRotation:
             collector = AsyncCollector(ROOM, first, sink_factory=None)
             assert await collector.rotate() is None
             assert collector.rotations == 0
+
+    @pytest.mark.asyncio
+    async def test_a_failed_rollover_keeps_collecting_in_the_current_file(
+        self, tmp_path: Path
+    ) -> None:
+        """Regression: an unopenable next shard must not end the capture.
+
+        The name collision case (two rollovers inside one second) surfaced this
+        against a live room: `rotate()` raised, the exception escaped the run
+        loop, and the collector died - costing a restart gap rather than just a
+        delayed rollover.
+        """
+        make, counter = _factory(tmp_path, rotate_after=0)
+        first = make()
+
+        def broken_factory() -> SQLiteStorage:
+            counter["n"] += 1
+            raise FileExistsError("Output database already exists: collision.db")
+
+        async with first:
+            collector = AsyncCollector(ROOM, first, sink_factory=broken_factory)
+            await collector.storage.save(_message("before"))
+
+            assert await collector.rotate() is None, "a failed rollover reports no new file"
+            assert collector.rotations == 0
+
+            # the old sink is still live and still accepting messages
+            await collector.storage.save(_message("after"))
+
+        assert _rows(tmp_path / "run1.db") == [("before", ROOM), ("after", ROOM)]
+        assert _meta(tmp_path / "run1.db")["ended_at"] != ""
+
+    @pytest.mark.asyncio
+    async def test_a_failed_rollover_does_not_lose_the_next_message(self, tmp_path: Path) -> None:
+        """The failure path must leave the swap untouched, not half-applied."""
+        first = _factory(tmp_path, rotate_after=0)[0]()
+
+        async with first:
+            collector = AsyncCollector(
+                ROOM, first, sink_factory=lambda: SQLiteStorage(tmp_path / "never.db")
+            )
+            await collector.storage.save(_message("a"))
+
+            original_open = SQLiteStorage.open
+
+            async def failing_open(self: SQLiteStorage) -> StorageHandler:
+                raise OSError("disk full")
+
+            SQLiteStorage.open = failing_open  # type: ignore[method-assign]
+            try:
+                assert await collector.rotate() is None
+            finally:
+                SQLiteStorage.open = original_open  # type: ignore[method-assign]
+
+            await collector.storage.save(_message("b"))
+
+        assert _rows(tmp_path / "run1.db") == [("a", ROOM), ("b", ROOM)]
+        assert not (tmp_path / "never.db").exists()
+
+
+class TestShardNaming:
+    def test_two_rollovers_in_the_same_second_get_distinct_names(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Regression: second-granularity names collided on a fast rollover.
+
+        The factory froze `datetime.now()` at whole seconds, so a second
+        rollover in the same second picked the same filename and the
+        immutability guard rejected it.
+        """
+        from dykit.collect import cli as capture_cli
+
+        # Freeze the clock so both rollovers would otherwise pick one name.
+        class _FrozenDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):  # type: ignore[no-untyped-def]
+                return cls(2026, 10, 16, 10, 0, 0)
+
+        monkeypatch.setattr(capture_cli, "datetime", _FrozenDatetime)
+        monkeypatch.setattr(capture_cli, "DEFAULT_RUN_DIR", str(tmp_path))
+
+        factory = capture_cli._make_sqlite_sink_factory(ROOM, None, 1, 60.0, 0)  # pyright: ignore[reportPrivateUsage]
+
+        first = factory()
+        first_path = Path(first.run_ref)
+        first_path.touch()  # stand in for the file the first rollover created
+
+        second = factory()
+        second_path = Path(second.run_ref)
+
+        assert first_path != second_path, "a taken shard name must be bumped"
+        assert second_path.name.startswith(f"{ROOM}_")
+        assert not second_path.exists()
 
 
 class TestRotationTrigger:

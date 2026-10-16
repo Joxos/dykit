@@ -7,7 +7,7 @@ import contextlib
 import signal
 import sys
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated, Literal
@@ -92,7 +92,15 @@ async def _run_collector(
             done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
             if rotate_task in done:
                 print("Rotating to a new run file...")
-                await collector.rotate(reason="SIGHUP")
+                # A failed rollover must never end the capture: keep writing to
+                # the current shard and let the operator retry (the socket, the
+                # heartbeat and the buffer are all untouched here).
+                try:
+                    await collector.rotate(reason="SIGHUP")
+                except Exception as exc:
+                    print(
+                        f"Rollover failed, continuing in current run file: {exc}", file=sys.stderr
+                    )
                 rotate_task = asyncio.create_task(rotate_event.wait())
                 pending.add(rotate_task)
             if shutdown_task in done:
@@ -133,12 +141,18 @@ def _make_sqlite_sink_factory(
     """Build sinks for a session, naming each rollover after its start time.
 
     Rollover files are named by their own creation time, so a room's shards
-    sort chronologically by filename alone.
+    sort chronologically by filename alone. Two rollovers inside the same
+    second would otherwise pick the same name and the immutability guard would
+    reject the second one, so a taken name is bumped to the next second.
     """
 
     def factory() -> SQLiteStorage:
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = output or str(default_run_file(room, stamp))
+        stamp = datetime.now()
+        while True:
+            path = output or str(default_run_file(room, stamp.strftime("%Y%m%d_%H%M%S")))
+            if not Path(path).exists():
+                break
+            stamp += timedelta(seconds=1)
         return SQLiteStorage(
             path,
             room_id=room,
