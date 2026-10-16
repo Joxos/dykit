@@ -230,7 +230,12 @@ hp66 从 `4642a29`（旧双入口 `dycap`/`dystat`）升级到 `74276e9`（单�
 |---|---|
 | `dykit-capture@.service` | 采集，`--rotate-after 1000000`；SIGHUP 按需轮转 |
 | `dycap-scan.service` + `.timer` | 每小时扫描中断 run / 覆盖间隙 / 磁盘水位（`SuccessExitStatus=1`） |
-| `dykit-inspect.service` + `.timer` | **每 12 小时**巡检：服务状态、活跃分片是否在写、分片数据抽样、scan 汇总 |
+| `dykit-inspect.service` + `.timer` | **每 12 小时**巡检（10:00/22:00 **北京**；host 是 UTC，故 timer 里显式写 `Asia/Shanghai`）：服务状态、活跃分片是否在写、分片数据抽样、scan 汇总 |
+
+> 时区坑：hp66 系统时区是 `Etc/UTC`，而 run 文件里的 `started_at`/`timestamp`
+> 都按宿主时钟（UTC）存储。`OnCalendar` 不写时区时会按 UTC 触发，
+> 巡检 12 小时制就落在 08:00/20:00 北京——所以 timer 显式指定 `Asia/Shanghai`，
+> 巡检脚本也会同时打印 UTC 与北京、并标注分片时间戳为 UTC。
 
 轮转与巡检运维：
 
