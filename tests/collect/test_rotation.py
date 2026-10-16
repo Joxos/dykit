@@ -253,6 +253,73 @@ class TestShardNaming:
         assert not second_path.exists()
 
 
+class TestSighupRotation:
+    """`_run_collector` drives rollover from a level-triggered event."""
+
+    @pytest.mark.asyncio
+    async def test_one_hup_rolls_over_once(self, tmp_path: Path) -> None:
+        """Regression: a set-but-never-cleared event spun the loop.
+
+        Found by rehearsing SIGHUP against a live room: `rotate_event` was
+        never cleared, so re-waiting on it returned immediately and the
+        collector rolled over on *every* loop iteration - ~1390 empty shards
+        from two HUP signals.
+        """
+        from dykit.collect import cli as capture_cli
+
+        make, counter = _factory(tmp_path, rotate_after=0)
+        first = make()
+        shutdown_event = asyncio.Event()
+        rotate_event = asyncio.Event()
+
+        async def fire_shutdown() -> None:
+            await asyncio.sleep(0.05)
+            shutdown_event.set()
+
+        async with first:
+            collector = AsyncCollector(ROOM, first, sink_factory=make)
+            rotate_event.set()  # the HUP arrives before the loop starts
+
+            await asyncio.gather(
+                capture_cli._run_collector(  # pyright: ignore[reportPrivateUsage]
+                    collector, shutdown_event, rotate_event
+                ),
+                fire_shutdown(),
+            )
+
+        assert counter["n"] == 2, f"one HUP must roll over exactly once, got {counter['n'] - 1}"
+        assert collector.rotations == 1
+
+    @pytest.mark.asyncio
+    async def test_two_hups_roll_over_twice(self, tmp_path: Path) -> None:
+        from dykit.collect import cli as capture_cli
+
+        make, counter = _factory(tmp_path, rotate_after=0)
+        first = make()
+        shutdown_event = asyncio.Event()
+        rotate_event = asyncio.Event()
+
+        async def fire() -> None:
+            await asyncio.sleep(0.02)
+            rotate_event.set()
+            await asyncio.sleep(0.05)
+            rotate_event.set()
+            await asyncio.sleep(0.05)
+            shutdown_event.set()
+
+        async with first:
+            collector = AsyncCollector(ROOM, first, sink_factory=make)
+            await asyncio.gather(
+                capture_cli._run_collector(  # pyright: ignore[reportPrivateUsage]
+                    collector, shutdown_event, rotate_event
+                ),
+                fire(),
+            )
+
+        assert collector.rotations == 2
+        assert counter["n"] == 3
+
+
 class TestRotationTrigger:
     @pytest.mark.asyncio
     async def test_sink_reports_when_its_budget_is_spent(self, tmp_path: Path) -> None:

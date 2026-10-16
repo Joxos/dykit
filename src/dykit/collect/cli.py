@@ -101,6 +101,10 @@ async def _run_collector(
                     print(
                         f"Rollover failed, continuing in current run file: {exc}", file=sys.stderr
                     )
+                # Clear before re-arming: `Event.wait()` returns immediately while
+                # the event stays set, so re-waiting on a set event would spin the
+                # loop and roll over on every iteration instead of once per HUP.
+                rotate_event.clear()
                 rotate_task = asyncio.create_task(rotate_event.wait())
                 pending.add(rotate_task)
             if shutdown_task in done:
