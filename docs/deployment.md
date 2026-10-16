@@ -211,3 +211,37 @@ tar -czf ~/backups/dycap-$(date +%Y%m).tgz ~/dycap-data
 | 内层候选循环不检查 `_running` | stop 后仍遍历全部候选 URL 重连重试，退出延迟 1-2 分钟 | connect() 内层循环/错误路径检查 `self._running`，stop 后立即退出 |
 
 验证：`kill -TERM` 手动测试 → `DONE` + `EXITED CLEANLY` + meta 完整；`systemctl --user restart` 后旧 run `ended_at` 正常写入。历史中断 run 由 scan 识别（`scan_runs.py` 退出码 1）。
+
+### 升级记录（2026-10-16：单包重构 + 无损轮转）
+
+hp66 从 `4642a29`（旧双入口 `dycap`/`dystat`）升级到 `74276e9`（单包
+`src/dykit/`、`dykit-capture`/`dykit-stats`、进程内轮转）。
+
+切换方式（先装后切，全程只丢一个交接窗口）：
+
+1. `git pull` + `uv sync` —— 运行中的旧进程不受影响（代码已在内存）
+2. `scripts/probes/live_smoke.py`、`--stop-after`、`--rotate-after` 彩排
+3. `systemctl --user disable --now dycap@6657` → `enable --now dykit-capture@6657`
+4. 实测交接间隙 **1.3s**，旧分片 `ended_at` 正常，`scan_runs.py` 未报 GAP
+
+服务单元（`~/.config/systemd/user/`）：
+
+| 单元 | 作用 |
+|---|---|
+| `dykit-capture@.service` | 采集，`--rotate-after 1000000`；SIGHUP 按需轮转 |
+| `dycap-scan.service` + `.timer` | 每小时扫描中断 run / 覆盖间隙 / 磁盘水位（`SuccessExitStatus=1`） |
+| `dykit-inspect.service` + `.timer` | **每 12 小时**巡检：服务状态、活跃分片是否在写、分片数据抽样、scan 汇总 |
+
+轮转与巡检运维：
+
+```bash
+systemctl --user kill -s HUP dykit-capture@6657   # 无损换分片（socket 不断）
+journalctl --user -u dykit-inspect.service -n 40  # 12 小时巡检报告
+```
+
+彩排中发现并修复的两个真实缺陷（均已补回归测试）：
+
+| 问题 | 表现 | 修复 |
+|---|---|---|
+| `rotate_event` 从不清除 | 一次 SIGHUP 后 `Event.wait()` 立即返回，循环每次迭代都轮转——两个信号产生 ~1390 个空分片 | 重新 arm 前 `rotate_event.clear()`；测试直接覆盖 `_run_collector`（旧测试只调 `collector.rotate()`，绕过了事件接线） |
+| 分片名秒级冲突 | 同一秒内两次轮转撞名，immutability 守卫报错并使采集退出 | 工厂把已占用的名字顺延到下一秒；`rotate()` 把"准备新分片失败"视为非致命（记日志、保留当前分片继续写） |
