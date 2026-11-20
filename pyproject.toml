@@ -31,7 +31,7 @@ dependencies = [
     # presentation + CLI (both commands)
     "cyclopts",
     "rich>=14.0.0",
-    "loguru>=0.7.0",
+    "loguru>=0.8.0",
     # stats
     "rapidfuzz>=3.14.1",
 ]
